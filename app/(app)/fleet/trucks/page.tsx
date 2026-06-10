@@ -31,6 +31,7 @@ export default async function FleetTrucksPage() {
           depot: t.depot.name,
           region: t.region,
           block: t.block,
+          type: t.type,
           defaultDriverId: t.defaultDriverId,
           defaultDriver: t.defaultDriver?.name ?? null,
           isActive: t.isActive,

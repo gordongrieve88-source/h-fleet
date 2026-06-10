@@ -70,13 +70,20 @@ export async function saveTruck(input: {
   depotId: number;
   region: string;
   block: string;
+  type: string;
   defaultDriverId: number | null;
 }): Promise<ActionResult> {
   const user = await requireEdit();
   try {
     if (!input.id.trim()) return { ok: false, error: "Fleet code is required." };
     const id = input.id.trim().toUpperCase();
-    const data = { depotId: input.depotId, region: input.region, block: input.block.trim(), defaultDriverId: input.defaultDriverId };
+    const data = {
+      depotId: input.depotId,
+      region: input.region,
+      block: input.block.trim(),
+      type: input.type.trim() || "Agitator",
+      defaultDriverId: input.defaultDriverId,
+    };
     if (input.isNew) {
       await fleetRepo.createTruck({ id, ...data });
       await logAction(user, "fleet.truck.create", "Truck", null, `Added truck ${id} (${data.block})`);

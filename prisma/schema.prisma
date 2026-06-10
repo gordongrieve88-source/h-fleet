@@ -169,6 +169,9 @@ model Truck {
   depotId         Int
   region          String
   block           String // board block label, e.g. "Greenacre Project"
+  /// Vehicle function (Agitator, Tipper, …). Free data — values typed in
+  /// admin appear in the board chips and wallboard breakdowns automatically.
+  type            String  @default("Agitator")
   defaultDriverId Int?
   sortOrder       Int     @default(0)
   isActive        Boolean @default(true)

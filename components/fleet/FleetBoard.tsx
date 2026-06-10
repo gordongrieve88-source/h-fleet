@@ -72,6 +72,9 @@ export function FleetBoard({
   const leaveTypeByCode = useMemo(() => new Map(leaveTypes.map((t) => [t.code, t])), [leaveTypes]);
   const truckBlock = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.block])), [catalog.trucks]);
   const truckRegion = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.region])), [catalog.trucks]);
+  const truckType = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.type])), [catalog.trucks]);
+  // Show a type tag on the board only when the fleet actually has mixed types.
+  const mixedTypes = useMemo(() => new Set(catalog.trucks.map((t) => t.type)).size > 1, [catalog.trucks]);
   const blocksByRegion = useMemo(() => {
     const m: Record<string, string[]> = {};
     for (const t of catalog.trucks) {
@@ -221,6 +224,7 @@ export function FleetBoard({
                             <TruckRow
                               key={a.truck}
                               row={a}
+                              typeTag={mixedTypes ? (truckType[a.truck] ?? null) : null}
                               driver={a.driverId != null ? (driverById.get(a.driverId) ?? null) : null}
                               statusCodes={STATUS_CODES}
                               canEdit={canEdit}

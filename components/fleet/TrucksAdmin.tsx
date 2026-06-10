@@ -11,6 +11,7 @@ export type TruckRowVM = {
   depot: string;
   region: string;
   block: string;
+  type: string;
   defaultDriverId: number | null;
   defaultDriver: string | null;
   isActive: boolean;
@@ -34,15 +35,19 @@ export function TrucksAdmin({
   const [showInactive, setShowInactive] = useState(false);
   const { run, pending } = useAction();
 
+  const types = useMemo(() => [...new Set(trucks.map((t) => t.type))].sort(), [trucks]);
+  const [typeFilter, setTypeFilter] = useState("All");
+
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
     return trucks.filter(
       (t) =>
         (showInactive || t.isActive) &&
         (regionFilter === "All" || t.region === regionFilter) &&
+        (typeFilter === "All" || t.type === typeFilter) &&
         (!q || t.id.toLowerCase().includes(q) || t.block.toLowerCase().includes(q) || (t.defaultDriver ?? "").toLowerCase().includes(q)),
     );
-  }, [trucks, search, regionFilter, showInactive]);
+  }, [trucks, search, regionFilter, typeFilter, showInactive]);
 
   return (
     <div>
@@ -53,6 +58,14 @@ export function TrucksAdmin({
           {regions.map((r) => (
             <option key={r} value={r}>
               {r}
+            </option>
+          ))}
+        </select>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className={input + " max-w-[160px]"}>
+          <option value="All">All types</option>
+          {types.map((t) => (
+            <option key={t} value={t}>
+              {t}
             </option>
           ))}
         </select>
@@ -70,7 +83,7 @@ export function TrucksAdmin({
         <table className="w-full text-sm">
           <thead className="bg-brand-deep text-white">
             <tr>
-              {["Fleet code", "Depot", "Region", "Block", "Default driver", ""].map((h, i) => (
+              {["Fleet code", "Type", "Depot", "Region", "Block", "Default driver", ""].map((h, i) => (
                 <th key={i} className="px-3 py-2 text-left text-[12px] font-semibold">
                   {h}
                 </th>
@@ -84,6 +97,7 @@ export function TrucksAdmin({
                   {t.id}
                   {!t.isActive && <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500">inactive</span>}
                 </td>
+                <td className="px-3 py-1.5 text-slate-600">{t.type}</td>
                 <td className="px-3 py-1.5 text-slate-700">{t.depot}</td>
                 <td className="px-3 py-1.5 text-slate-500">{t.region}</td>
                 <td className="px-3 py-1.5 text-slate-500">{t.block}</td>
@@ -104,7 +118,7 @@ export function TrucksAdmin({
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
                   No trucks match.
                 </td>
               </tr>
@@ -113,7 +127,9 @@ export function TrucksAdmin({
         </table>
       </div>
 
-      {editing && <TruckDialog row={editing === "new" ? null : editing} depots={depots} regions={regions} drivers={drivers} onClose={() => setEditing(null)} />}
+      {editing && (
+        <TruckDialog row={editing === "new" ? null : editing} depots={depots} regions={regions} types={types} drivers={drivers} onClose={() => setEditing(null)} />
+      )}
     </div>
   );
 }
@@ -122,12 +138,14 @@ function TruckDialog({
   row,
   depots,
   regions,
+  types,
   drivers,
   onClose,
 }: {
   row: TruckRowVM | null;
   depots: DepotOpt[];
   regions: string[];
+  types: string[];
   drivers: DriverOpt[];
   onClose: () => void;
 }) {
@@ -135,10 +153,11 @@ function TruckDialog({
   const [depotId, setDepotId] = useState(row?.depotId ?? depots[0]?.id ?? 0);
   const [region, setRegion] = useState(row?.region ?? regions[0] ?? "");
   const [block, setBlock] = useState(row?.block ?? "");
+  const [type, setType] = useState(row?.type ?? "Agitator");
   const [defaultDriverId, setDefaultDriverId] = useState<number | null>(row?.defaultDriverId ?? null);
   const { run, pending, error } = useAction();
 
-  const submit = () => run(() => saveTruck({ id, isNew: !row, depotId, region, block, defaultDriverId }), onClose);
+  const submit = () => run(() => saveTruck({ id, isNew: !row, depotId, region, block, type, defaultDriverId }), onClose);
 
   return (
     <Modal title={row ? `Edit ${row.id}` : "Add truck"} onClose={onClose}>
@@ -152,15 +171,25 @@ function TruckDialog({
           autoFocus={!row}
         />
       </Field>
-      <Field label="Home depot">
-        <select className={input} value={depotId} onChange={(e) => setDepotId(Number(e.target.value))}>
-          {depots.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name} · {d.region}
-            </option>
-          ))}
-        </select>
-      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Home depot">
+          <select className={input} value={depotId} onChange={(e) => setDepotId(Number(e.target.value))}>
+            {depots.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name} · {d.region}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Type">
+          <input className={input} value={type} onChange={(e) => setType(e.target.value)} list="truck-type-options" placeholder="e.g. Agitator, Tipper" />
+          <datalist id="truck-type-options">
+            {types.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+        </Field>
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Operating region">
           <select className={input} value={region} onChange={(e) => setRegion(e.target.value)}>

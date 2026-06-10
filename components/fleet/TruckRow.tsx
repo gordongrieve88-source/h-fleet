@@ -11,6 +11,7 @@ const SELECT_TEXT = { on: "text-brand-mid", warn: "text-amber-600", off: "text-r
 /** One truck on the daily board: status dot · fleet code · driver · status. */
 export function TruckRow({
   row,
+  typeTag,
   driver,
   statusCodes,
   canEdit,
@@ -21,6 +22,8 @@ export function TruckRow({
   dragActive,
 }: {
   row: TruckAssignmentVM;
+  /** Vehicle type shown as a small tag — null hides it (single-type fleets). */
+  typeTag: string | null;
   driver: DriverVM | null;
   statusCodes: string[];
   canEdit: boolean;
@@ -55,7 +58,10 @@ export function TruckRow({
         title={TRUCK_STATUS[row.status as keyof typeof TRUCK_STATUS]?.label ?? row.status}
         className={`h-2.5 w-2.5 rounded-full ${DOT[kind]}`}
       />
-      <span className="font-mono text-[12px] font-semibold text-slate-500">{row.truck}</span>
+      <span className="font-mono text-[12px] font-semibold text-slate-500">
+        {row.truck}
+        {typeTag && <span className="mt-0.5 block font-sans text-[9px] font-medium uppercase tracking-wide text-slate-400">{typeTag}</span>}
+      </span>
 
       <div className="min-w-0">
         {driver ? (

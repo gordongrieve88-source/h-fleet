@@ -16,6 +16,7 @@ export interface TruckVM {
   depot: string;
   region: string;
   block: string;
+  type: string;
   defaultDriverId: number | null;
 }
 
@@ -85,6 +86,7 @@ export async function loadFleetCatalog(): Promise<FleetCatalogVM> {
       depot: t.depot.name,
       region: t.region,
       block: t.block,
+      type: t.type,
       defaultDriverId: t.defaultDriverId,
     })),
   };

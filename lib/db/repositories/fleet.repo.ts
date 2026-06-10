@@ -57,10 +57,10 @@ export const fleetRepo = {
       include: { depot: true, defaultDriver: true },
     });
   },
-  createTruck(t: { id: string; depotId: number; region: string; block: string; defaultDriverId: number | null }) {
+  createTruck(t: { id: string; depotId: number; region: string; block: string; type: string; defaultDriverId: number | null }) {
     return prisma.truck.create({ data: t });
   },
-  updateTruck(id: string, t: { depotId: number; region: string; block: string; defaultDriverId: number | null }) {
+  updateTruck(id: string, t: { depotId: number; region: string; block: string; type: string; defaultDriverId: number | null }) {
     return prisma.truck.update({ where: { id }, data: t });
   },
   setTruckActive(id: string, isActive: boolean) {
