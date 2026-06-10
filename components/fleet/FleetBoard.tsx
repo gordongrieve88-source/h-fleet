@@ -1,0 +1,336 @@
+"use client";
+
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import type { FleetCatalogVM, TruckAssignmentVM, DriverVM, LeaveTypeVM } from "@/lib/fleet/catalog";
+import { TRUCK_STATUS, availFor } from "@/lib/wfm/fleet";
+import { Kpi } from "./Kpi";
+import { TruckRow } from "./TruckRow";
+import { DriverChip } from "./DriverChip";
+import { PickerField } from "./DatePicker";
+import { useToast } from "@/components/Toast";
+import { moveDriver, setTruckStatus, clearTruckDriver, resetBoardDay } from "@/app/(app)/fleet/actions";
+
+const STATUS_CODES = Object.keys(TRUCK_STATUS);
+
+export type DoctorIssueGroup = { kind: "critical" | "warn" | "info"; label: string; items: string[] };
+
+const pad = (n: number) => String(n).padStart(2, "0");
+function addDaysIso(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+function isoToday(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Australia/Sydney" });
+}
+function fmtLong(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-AU", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+function isWeekendIso(iso: string): boolean {
+  const dow = new Date(`${iso}T00:00:00Z`).getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
+export function FleetBoard({
+  date,
+  catalog,
+  rows,
+  onLeave,
+  leaveTypes,
+  doctor,
+  canEdit,
+  isCaptured,
+}: {
+  date: string;
+  catalog: FleetCatalogVM;
+  rows: TruckAssignmentVM[];
+  onLeave: { driverId: number; leaveTypeCode: string }[];
+  leaveTypes: LeaveTypeVM[];
+  doctor: DoctorIssueGroup[];
+  canEdit: boolean;
+  /** Whether this day is saved history vs a live roll-forward synthesis. */
+  isCaptured: boolean;
+}) {
+  const router = useRouter();
+  const toast = useToast();
+  const [pending, startTransition] = useTransition();
+  const [regionFilter, setRegionFilter] = useState("All");
+  const [drag, setDrag] = useState<{ from: string; driverId: number } | null>(null);
+
+  const driverById = useMemo(() => {
+    const m = new Map<number, DriverVM>();
+    for (const d of catalog.drivers) m.set(d.id, d);
+    return m;
+  }, [catalog.drivers]);
+  const leaveTypeByCode = useMemo(() => new Map(leaveTypes.map((t) => [t.code, t])), [leaveTypes]);
+  const truckBlock = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.block])), [catalog.trucks]);
+  const truckRegion = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.region])), [catalog.trucks]);
+  const blocksByRegion = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    for (const t of catalog.trucks) {
+      m[t.region] ??= [];
+      if (!m[t.region].includes(t.block)) m[t.region].push(t.block);
+    }
+    return m;
+  }, [catalog.trucks]);
+
+  const fleet = useMemo(() => availFor(rows), [rows]);
+  const onLeaveIds = useMemo(() => new Set(onLeave.map((l) => l.driverId)), [onLeave]);
+  const spares = useMemo(() => {
+    const used = new Set(rows.map((r) => r.driverId).filter((x): x is number => x != null));
+    return catalog.drivers.filter((d) => !used.has(d.id) && !onLeaveIds.has(d.id));
+  }, [rows, catalog.drivers, onLeaveIds]);
+
+  const go = (fn: () => Promise<{ ok: boolean; error?: string }>) =>
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) toast(res.error ?? "Something went wrong.", "error");
+      router.refresh();
+    });
+
+  const nav = (iso: string) => router.push(`/fleet?d=${iso}`);
+
+  const handleDrop = (toTruck: string) => {
+    if (!drag) return;
+    const { from, driverId } = drag;
+    setDrag(null);
+    go(() => moveDriver(date, from, driverId, toTruck));
+  };
+
+  const regions = regionFilter === "All" ? catalog.regions : [regionFilter];
+  const weekend = isWeekendIso(date);
+  const doctorCount = doctor.reduce((a, g) => a + g.items.length, 0);
+
+  return (
+    <div className={pending ? "opacity-70 transition-opacity" : ""}>
+      {/* Controls — sticks just below the app topbar. */}
+      <div className="print-hide sticky top-14 z-30 -mx-5 mb-4 border-b border-slate-200 bg-brand-sand/70 px-5 py-3 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => nav(addDaysIso(date, -1))} className={navBtn} aria-label="Previous day">
+              ‹
+            </button>
+            <PickerField
+              mode="day"
+              value={date}
+              onChange={nav}
+              buttonLabel={fmtLong(date)}
+              buttonClassName="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-brand-deep hover:bg-slate-50"
+            />
+            <button onClick={() => nav(addDaysIso(date, 1))} className={navBtn} aria-label="Next day">
+              ›
+            </button>
+            <button
+              onClick={() => nav(isoToday())}
+              className="ml-1 rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Today
+            </button>
+            {weekend && <span className="ml-1 rounded-full bg-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500">Weekend</span>}
+            <span
+              className={`ml-1 rounded-full px-2 py-1 text-[11px] font-medium ${
+                isCaptured ? "bg-brand-mid/15 text-brand-deep" : "border border-dashed border-slate-300 text-slate-400"
+              }`}
+              title={
+                isCaptured
+                  ? "This day has saved edits — it counts in utilisation and availability reports."
+                  : "Live roll-forward from each truck's default driver. The first edit saves the whole day as history."
+              }
+            >
+              {isCaptured ? "Saved day" : "Roll-forward"}
+            </span>
+          </div>
+          <div className="ml-auto flex flex-wrap gap-2">
+            <Kpi
+              label="Fleet availability"
+              value={`${Math.round(fleet.pct * 100)}%`}
+              tone={fleet.pct >= 0.9 ? "good" : fleet.pct >= 0.8 ? "warn" : "bad"}
+              big
+            />
+            <Kpi label="On road" value={`${fleet.on}`} tone="good" />
+            <Kpi label="Off road" value={`${fleet.off}`} tone={fleet.off > 0 ? "warn" : "neutral"} />
+            <Kpi label="Needs cover" value={`${fleet.needsCover}`} tone={fleet.needsCover > 0 ? "bad" : "neutral"} />
+            <Kpi label="On leave" value={`${onLeave.length}`} tone="neutral" />
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {["All", ...catalog.regions].map((r) => (
+            <button
+              key={r}
+              onClick={() => setRegionFilter(r)}
+              className={`rounded-full border px-3.5 py-1 text-[12.5px] font-semibold ${
+                regionFilter === r
+                  ? "border-brand-mid bg-brand-mid text-white"
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {r}
+            </button>
+          ))}
+          {canEdit && isCaptured && (
+            <button
+              onClick={() => {
+                if (window.confirm("Discard every edit on this day and revert to the roll-forward default?")) {
+                  go(() => resetBoardDay(date));
+                }
+              }}
+              className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-slate-400 hover:text-slate-600"
+              title="Reset this day's edits to the roll-forward default"
+            >
+              Reset day
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-start gap-5">
+        <div className="min-w-0 flex-1">
+          {regions.map((region) => {
+            const blocks = blocksByRegion[region] ?? [];
+            const regionRows = rows.filter((a) => truckRegion[a.truck] === region);
+            if (regionRows.length === 0) return null;
+            const ra = availFor(regionRows);
+            return (
+              <section key={region} className="mb-7">
+                <div className="mb-2.5 flex items-baseline gap-3">
+                  <h2 className="font-heading text-[13px] font-bold uppercase tracking-[0.12em] text-brand-deep">{region}</h2>
+                  <span className="text-xs text-slate-400">
+                    {ra.on}/{ra.total} on road · {Math.round(ra.pct * 100)}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(310px,1fr))] gap-3.5">
+                  {blocks.map((block) => {
+                    const bRows = rows.filter((a) => truckBlock[a.truck] === block);
+                    if (bRows.length === 0) return null;
+                    const ba = availFor(bRows);
+                    return (
+                      <div key={block} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
+                        <div className="mb-2 flex items-center justify-between">
+                          <div className="text-sm font-semibold text-brand-deep">{block}</div>
+                          <AvailBadge pct={ba.pct} on={ba.on} total={ba.total} />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          {bRows.map((a) => (
+                            <TruckRow
+                              key={a.truck}
+                              row={a}
+                              driver={a.driverId != null ? (driverById.get(a.driverId) ?? null) : null}
+                              statusCodes={STATUS_CODES}
+                              canEdit={canEdit}
+                              onStatus={(s) => go(() => setTruckStatus(date, a.truck, s))}
+                              onClearDriver={() => go(() => clearTruckDriver(date, a.truck))}
+                              dragActive={!!drag}
+                              onDragStartDriver={() => a.driverId != null && setDrag({ from: a.truck, driverId: a.driverId })}
+                              onDropDriver={() => handleDrop(a.truck)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+
+        {/* Right rail: doctor, spares, on leave. */}
+        <aside className="print-hide sticky top-[166px] hidden w-64 flex-shrink-0 flex-col gap-4 lg:flex">
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
+            <div className="flex items-center justify-between">
+              <div className="text-[13.5px] font-semibold text-brand-deep">Fleet doctor</div>
+              {doctorCount === 0 ? (
+                <span className="rounded-full bg-brand-mid/15 px-2 py-0.5 text-[11px] font-bold text-brand-deep">✓ clean</span>
+              ) : (
+                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-700">{doctorCount}</span>
+              )}
+            </div>
+            {doctorCount === 0 ? (
+              <p className="mt-1.5 text-xs text-slate-400">No issues on this day&apos;s board.</p>
+            ) : (
+              <div className="mt-2 flex max-h-[260px] flex-col gap-2 overflow-y-auto">
+                {doctor.map((g) => (
+                  <div key={g.label}>
+                    <div
+                      className={`text-[11px] font-bold uppercase tracking-wide ${
+                        g.kind === "critical" ? "text-rose-600" : g.kind === "warn" ? "text-amber-600" : "text-slate-400"
+                      }`}
+                    >
+                      {g.label} · {g.items.length}
+                    </div>
+                    <ul className="mt-0.5 space-y-0.5">
+                      {g.items.map((it, i) => (
+                        <li key={i} className="truncate text-[12px] text-slate-600" title={it}>
+                          {it}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
+            <div className="text-[13.5px] font-semibold text-brand-deep">
+              Spare drivers <span className="font-normal text-slate-400">({spares.length})</span>
+            </div>
+            <div className="mb-2 mt-0.5 text-[11px] text-slate-400">
+              {canEdit ? "Drag onto any truck to assign." : "Unassigned and available today."}
+            </div>
+            <div className="flex max-h-[320px] flex-col gap-1.5 overflow-y-auto">
+              {spares.slice(0, 80).map((d) => (
+                <DriverChip key={d.id} driver={d} draggable={canEdit} onDragStart={() => setDrag({ from: "pool", driverId: d.id })} />
+              ))}
+              {spares.length === 0 && <div className="text-xs text-slate-400">Everyone is rostered.</div>}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
+            <div className="text-[13.5px] font-semibold text-brand-deep">
+              On leave today <span className="font-normal text-slate-400">({onLeave.length})</span>
+            </div>
+            <div className="mt-2 flex max-h-[220px] flex-col gap-1.5 overflow-y-auto">
+              {onLeave.map((l) => {
+                const d = driverById.get(l.driverId);
+                const t = leaveTypeByCode.get(l.leaveTypeCode);
+                return (
+                  <div key={`${l.driverId}-${l.leaveTypeCode}`} className="flex justify-between gap-2 text-[12.5px]">
+                    <span className="truncate text-slate-700">{d?.name ?? `#${l.driverId}`}</span>
+                    <span className="whitespace-nowrap text-[11px] font-semibold" style={{ color: t?.color ?? "#d97706" }}>
+                      {l.leaveTypeCode}
+                    </span>
+                  </div>
+                );
+              })}
+              {onLeave.length === 0 && <div className="text-xs text-slate-400">No leave booked.</div>}
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function AvailBadge({ pct, on, total }: { pct: number; on: number; total: number }) {
+  const cls =
+    pct >= 0.9
+      ? "text-brand-mid bg-brand-mid/10 border-brand-mid/30"
+      : pct >= 0.8
+        ? "text-amber-600 bg-amber-50 border-amber-300"
+        : "text-rose-600 bg-rose-50 border-rose-300";
+  return (
+    <span className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-bold ${cls}`}>
+      {on}/{total} · {Math.round(pct * 100)}%
+    </span>
+  );
+}
+
+const navBtn = "h-9 w-9 rounded-md border border-slate-300 bg-white text-lg text-slate-500 hover:bg-slate-50";

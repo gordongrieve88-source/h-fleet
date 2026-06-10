@@ -1,0 +1,250 @@
+// ============================================================================
+//  H-Fleet — Production Schema
+// ----------------------------------------------------------------------------
+//  Single source of truth for the database. Identical for the local demo and
+//  Azure production — only the `provider` line and connection string differ.
+//
+//  Design notes:
+//   - Structure is DATA (region → depot → truck), editable in the app — new
+//     depots or trucks are added in Setup/admin screens, never in code.
+//   - Public holidays live in a table (per-state), editable in Setup.
+//   - Every write is recorded in AuditLog ("who did what, when").
+//   - In-app Notification table drives the bell in the top bar.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  // DEMO: "sqlite".  AZURE PRODUCTION: change to "sqlserver".
+  provider = "sqlite"
+}
+
+// ============================================================================
+//  REFERENCE / CONFIG
+// ============================================================================
+
+/// Leave categories (AL, PL, RDO, …). Colour drives the planner/board chips.
+/// One editable list in Setup covers all driver leave + entitlements.
+model LeaveType {
+  code      String  @id
+  name      String
+  colorHex  String?
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  driverLeave        DriverLeave[]
+  driverEntitlements DriverEntitlement[]
+}
+
+/// Public holidays, per state. states = "ALL" or a CSV like "NSW,VIC".
+/// Editable in Setup — no hardcoded dates anywhere in the app.
+model PublicHoliday {
+  id     Int    @id @default(autoincrement())
+  date   String // "YYYY-MM-DD"
+  name   String
+  states String @default("ALL")
+
+  @@index([date])
+}
+
+// ============================================================================
+//  IDENTITY  (what Microsoft Entra ID maps onto in production)
+// ============================================================================
+
+model AppUser {
+  id            Int     @id @default(autoincrement())
+  displayName   String
+  email         String? @unique
+  role          String  @default("STAFF") // STAFF / SUPERVISOR / MANAGER
+  isActive      Boolean @default(true)
+  entraObjectId String? @unique // null in demo; Entra object id in production
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notifications Notification[]
+}
+
+// ============================================================================
+//  AUDIT + NOTIFICATIONS
+// ============================================================================
+
+/// Append-only record of every write: who, what, when, and a human summary.
+/// userName is denormalised on purpose — the log must read cleanly even if
+/// accounts are later renamed or removed.
+model AuditLog {
+  id       Int      @id @default(autoincrement())
+  at       DateTime @default(now())
+  userId   Int?
+  userName String
+  action   String // e.g. "fleet.assign", "fleet.leave.approve", "setup.holidayCreate"
+  entity   String // e.g. "TruckAssignment", "DriverLeave"
+  entityId Int?
+  summary  String // human-readable one-liner shown in the Activity feed
+  meta     String? // JSON blob for anything structured
+
+  @@index([at])
+  @@index([action])
+}
+
+/// In-app notifications — the bell in the top bar. Created by server actions
+/// (leave decided, …); readAt marks them seen.
+model Notification {
+  id     Int       @id @default(autoincrement())
+  userId Int
+  at     DateTime  @default(now())
+  kind   String // "leave" / "fleet" / "system"
+  title  String
+  body   String?
+  href   String? // where clicking it goes
+  readAt DateTime?
+
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+// ============================================================================
+//  FLEET  (metro driver/truck daily roster)
+// ----------------------------------------------------------------------------
+//  194 drivers and ~149 agitator trucks across 13 depots, replacing the
+//  "HMA Metro Roster" spreadsheet. Data-driven structure (region → depot →
+//  truck), every write audited, leave against the shared LeaveType list.
+// ============================================================================
+
+/// Fleet operating regions (Projects, Metro East/West/Central).
+model FleetRegion {
+  name      String  @id
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  depots Depot[]
+}
+
+/// A physical home base (Greenacre, Prestons, …). Drivers and trucks belong
+/// to a depot; leave coverage is measured per depot.
+model Depot {
+  id         Int     @id @default(autoincrement())
+  name       String  @unique
+  regionName String
+  sortOrder  Int     @default(0)
+  isActive   Boolean @default(true)
+
+  region  FleetRegion @relation(fields: [regionName], references: [name])
+  drivers Driver[]
+  trucks  Truck[]
+
+  @@index([regionName])
+}
+
+model Driver {
+  id         Int     @id @default(autoincrement())
+  employeeNo String  @unique
+  name       String
+  depotId    Int
+  workgroup  String  @default("") // free label from the data: LOD / Metro / Project …
+  isActive   Boolean @default(true)
+
+  depot         Depot               @relation(fields: [depotId], references: [id])
+  leave         DriverLeave[]
+  entitlements  DriverEntitlement[]
+  defaultTrucks Truck[]             @relation("TruckDefaultDriver")
+  assignments   TruckAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([depotId])
+  @@index([isActive])
+}
+
+/// The fleet code IS the id (PCC2038, PLC2603 …) — it is how the business
+/// refers to a truck everywhere. `region`/`block` are the board grouping
+/// (where it operates), which can differ from its home depot.
+model Truck {
+  id              String  @id
+  depotId         Int
+  region          String
+  block           String // board block label, e.g. "Greenacre Project"
+  defaultDriverId Int?
+  sortOrder       Int     @default(0)
+  isActive        Boolean @default(true)
+
+  depot         Depot             @relation(fields: [depotId], references: [id])
+  defaultDriver Driver?           @relation("TruckDefaultDriver", fields: [defaultDriverId], references: [id], onDelete: SetNull)
+  assignments   TruckAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([depotId])
+  @@index([region])
+}
+
+/// The saved daily board — one row per (date, truck). A date with no rows is
+/// synthesised live from each truck's default driver ("roll forward"); the
+/// first edit materialises the whole day so it becomes reportable history.
+model TruckAssignment {
+  id       Int      @id @default(autoincrement())
+  date     DateTime // UTC midnight; treated as a date
+  truckId  String
+  status   String   @default("ON") // ON / ON-FTO / … / OFF-BD / OFF-ND (lib/wfm/fleet.ts)
+  driverId Int?
+  time     String?
+  note     String?
+
+  createdByUserId Int?
+  updatedByUserId Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  truck  Truck   @relation(fields: [truckId], references: [id], onDelete: Cascade)
+  driver Driver? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  @@unique([date, truckId])
+  @@index([date])
+}
+
+/// Driver leave — APPROVED blocks the board, PENDING sits in Approvals —
+/// against the shared LeaveType list.
+model DriverLeave {
+  id              Int       @id @default(autoincrement())
+  driverId        Int
+  leaveTypeCode   String
+  startDate       DateTime
+  endDate         DateTime // inclusive
+  status          String    @default("APPROVED") // APPROVED / PENDING / REJECTED
+  notes           String?
+  decisionNote    String?
+  decidedByUserId Int?
+  decidedAt       DateTime?
+
+  createdByUserId Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  driver    Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  leaveType LeaveType @relation(fields: [leaveTypeCode], references: [code])
+
+  @@index([driverId, startDate])
+  @@index([status])
+}
+
+/// Annual entitlement per driver/type/year — drives the AL balance shown in
+/// the planner and reports. (H-Fleet never computes pay; this is roster info.)
+model DriverEntitlement {
+  id             Int   @id @default(autoincrement())
+  driverId       Int
+  leaveTypeCode  String
+  year           Int
+  entitledDays   Float @default(0)
+  openingBalance Float @default(0)
+
+  driver    Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  leaveType LeaveType @relation(fields: [leaveTypeCode], references: [code])
+
+  @@unique([driverId, leaveTypeCode, year])
+}

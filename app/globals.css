@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+/* ===========================================================================
+   H-Crew — Heidelberg Materials brand. Single source of truth for colour +
+   type. Used app-wide via Tailwind tokens (bg-brand-deep, text-brand-mid, …).
+   =========================================================================== */
+@theme {
+  --color-brand-deep: #004e2b; /* deep green  — sidebar, headers, emphasis */
+  --color-brand-mid: #00843d; /* mid green   — buttons, links, active states */
+  --color-brand-bright: #00dd39; /* bright green — sparing accents on deep */
+  --color-brand-sand: #e6e6df; /* sandy grey  — secondary surfaces */
+
+  --font-sans: "Lexend", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-heading: "Lexend Exa", "Lexend", ui-sans-serif, system-ui, sans-serif;
+
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-pop: 0 8px 30px rgb(15 23 42 / 0.16);
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+h4,
+.font-heading {
+  font-family: var(--font-heading);
+  letter-spacing: -0.01em;
+}
+
+/* Keyboard focus — one clear brand ring on every interactive element. */
+:where(a, button, input, select, textarea, summary, [role="button"]):focus-visible {
+  outline: 2px solid var(--color-brand-mid);
+  outline-offset: 2px;
+}
+/* On the dark sidebar the mid-green ring vanishes — use the bright accent. */
+.on-dark :where(a, button, input, select):focus-visible {
+  outline-color: var(--color-brand-bright);
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Toast + dialog entrances. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-pop-in {
+  animation: pop-in 0.16s ease-out;
+}
+
+/* Print — used by Reports' Print/PDF. */
+@media print {
+  body {
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+  .print-hide {
+    display: none !important;
+  }
+  .shadow-card,
+  .shadow-sm,
+  .shadow {
+    box-shadow: none !important;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr,
+  .break-inside-avoid {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+  @page {
+    margin: 14mm 12mm;
+  }
+}
