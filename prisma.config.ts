@@ -1,10 +1,11 @@
-import "dotenv/config";
 import { defineConfig } from "prisma/config";
+import { databaseUrl } from "./lib/db/config";
 
 /**
- * Prisma configuration. The connection lives HERE (not in schema.prisma).
- * Demo: a local SQLite file. Azure production: change schema.prisma's
- * provider to "sqlserver" and set DATABASE_URL — nothing else changes.
+ * Prisma configuration. The connection lives HERE (not in schema.prisma) and
+ * resolves via lib/db/config.ts — local SQLite by default, SQL Server when
+ * the stored config file (deploy/h-fleet.env.example) fills in the DB_*
+ * fields. Production also flips schema.prisma's provider to "sqlserver".
  */
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -13,6 +14,6 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env.DATABASE_URL ?? "file:./prisma/dev.db",
+    url: databaseUrl(),
   },
 });

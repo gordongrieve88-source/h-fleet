@@ -1,0 +1,23 @@
+# H-Fleet systemd unit — install as /etc/systemd/system/h-fleet.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now h-fleet
+[Unit]
+Description=H-Fleet workforce rostering (Next.js)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hfleet
+Group=hfleet
+WorkingDirectory=/opt/h-fleet
+EnvironmentFile=/etc/h-fleet/h-fleet.env
+ExecStart=/usr/bin/npx next start -p ${PORT}
+Restart=always
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
