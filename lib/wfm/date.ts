@@ -23,11 +23,26 @@ export function dateFromKey(key: string): Date {
   return new Date(`${key}T00:00:00.000Z`);
 }
 
+/** "Today" in the team's timezone as a YYYY-MM-DD key. */
+export function todayKey(): string {
+  // en-CA formats as YYYY-MM-DD, exactly our date-key shape.
+  return new Date().toLocaleDateString("en-CA", { timeZone: APP_TIMEZONE });
+}
+
 /** UTC midnight for "today" in the team's timezone — the past/future anchor. */
 export function todayUTC(): Date {
-  // en-CA formats as YYYY-MM-DD, exactly our date-key shape.
-  const key = new Date().toLocaleDateString("en-CA", { timeZone: APP_TIMEZONE });
-  return dateFromKey(key);
+  return dateFromKey(todayKey());
+}
+
+/** Add n calendar days to a YYYY-MM-DD key. */
+export function addDaysKey(key: string, n: number): string {
+  return ymd(addDaysUTC(dateFromKey(key), n));
+}
+
+/** Saturday/Sunday check for a YYYY-MM-DD key. */
+export function isWeekendKey(key: string): boolean {
+  const dow = dateFromKey(key).getUTCDay();
+  return dow === 0 || dow === 6;
 }
 
 /** Add n calendar days (UTC). Returns a new Date. */
@@ -48,7 +63,9 @@ export function mondayOf(d: Date): Date {
 export function parseYmdOrNull(s: string | undefined | null): Date | null {
   if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const d = dateFromKey(s);
-  return Number.isNaN(d.getTime()) ? null : d;
+  // Round-trip guard: JS parsing rolls impossible days over ("2026-02-30"
+  // becomes 2 March) — only a key that survives unchanged is a real date.
+  return Number.isNaN(d.getTime()) || ymd(d) !== s ? null : d;
 }
 
 /** "9 Jun 2026" */

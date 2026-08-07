@@ -8,7 +8,9 @@ import { DriverChip } from "./DriverChip";
 const DOT = { on: "bg-brand-mid", warn: "bg-amber-500", off: "bg-rose-500" } as const;
 const SELECT_TEXT = { on: "text-brand-mid", warn: "text-amber-600", off: "text-rose-600" } as const;
 
-/** One truck on the daily board: status dot · fleet code · driver · status. */
+/** One truck on the daily board: status dot · fleet code · driver · status.
+ *  A drop target for dragged drivers, and — while a driver is picked up —
+ *  a tap target for tap-to-place moves. */
 export function TruckRow({
   row,
   typeTag,
@@ -20,6 +22,10 @@ export function TruckRow({
   onDragStartDriver,
   onDropDriver,
   dragActive,
+  onPickDriver,
+  pickedDriver,
+  placeActive,
+  onPlace,
 }: {
   row: TruckAssignmentVM;
   /** Vehicle type shown as a small tag — null hides it (single-type fleets). */
@@ -32,6 +38,13 @@ export function TruckRow({
   onDragStartDriver: () => void;
   onDropDriver: () => void;
   dragActive: boolean;
+  /** Tap this row's driver chip to pick it up (tap-to-place move). */
+  onPickDriver: () => void;
+  /** This row's driver is the one currently picked up. */
+  pickedDriver: boolean;
+  /** A driver is picked up somewhere — tapping this row places them here. */
+  placeActive: boolean;
+  onPlace: () => void;
 }) {
   const [over, setOver] = useState(false);
   const kind = statusKind(row.status);
@@ -50,9 +63,18 @@ export function TruckRow({
         setOver(false);
         onDropDriver();
       }}
+      onClick={(e) => {
+        // While a driver is picked up, the whole row is a tap target — except
+        // its own controls (status select, clear ×), which keep their meaning.
+        if (!placeActive) return;
+        if ((e.target as HTMLElement).closest("select,button")) return;
+        onPlace();
+      }}
       className={`grid grid-cols-[10px_60px_1fr_auto] items-center gap-2 rounded-lg border px-2 py-1.5 ${
         needsCover ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"
-      } ${over ? "ring-2 ring-brand-mid" : ""}`}
+      } ${over ? "ring-2 ring-brand-mid" : ""} ${
+        placeActive && !pickedDriver ? "cursor-pointer hover:ring-2 hover:ring-brand-mid" : ""
+      }`}
     >
       <span
         title={TRUCK_STATUS[row.status as keyof typeof TRUCK_STATUS]?.label ?? row.status}
@@ -70,11 +92,15 @@ export function TruckRow({
             draggable={canEdit}
             compact
             onDragStart={onDragStartDriver}
+            // While placing, a tap on the chip means "place here" (swap) — let
+            // it bubble to the row instead of re-picking.
+            onPick={canEdit && !placeActive ? onPickDriver : undefined}
+            picked={pickedDriver}
             onClear={canEdit ? onClearDriver : undefined}
           />
         ) : (
           <span className={`inline-flex items-center gap-1 text-[12px] italic ${needsCover ? "text-amber-700" : "text-slate-400"}`}>
-            {needsCover ? "⚠ needs cover" : canEdit ? "drop a driver…" : "—"}
+            {needsCover ? "⚠ needs cover" : canEdit ? (placeActive ? "tap to place…" : "drop a driver…") : "—"}
           </span>
         )}
       </div>

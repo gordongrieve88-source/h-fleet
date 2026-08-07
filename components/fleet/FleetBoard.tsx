@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { FleetCatalogVM, TruckAssignmentVM, DriverVM, LeaveTypeVM } from "@/lib/fleet/catalog";
 import { TRUCK_STATUS, availFor } from "@/lib/wfm/fleet";
+import { addDaysKey, isWeekendKey, todayKey } from "@/lib/wfm/date";
 import { Kpi } from "./Kpi";
 import { TruckRow } from "./TruckRow";
 import { DriverChip } from "./DriverChip";
@@ -15,15 +16,6 @@ const STATUS_CODES = Object.keys(TRUCK_STATUS);
 
 export type DoctorIssueGroup = { kind: "critical" | "warn" | "info"; label: string; items: string[] };
 
-const pad = (n: number) => String(n).padStart(2, "0");
-function addDaysIso(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-}
-function isoToday(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Australia/Sydney" });
-}
 function fmtLong(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-AU", {
     weekday: "long",
@@ -32,10 +24,6 @@ function fmtLong(iso: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
-}
-function isWeekendIso(iso: string): boolean {
-  const dow = new Date(`${iso}T00:00:00Z`).getUTCDay();
-  return dow === 0 || dow === 6;
 }
 
 export function FleetBoard({
@@ -62,7 +50,10 @@ export function FleetBoard({
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [regionFilter, setRegionFilter] = useState("All");
-  const [drag, setDrag] = useState<{ from: string; driverId: number } | null>(null);
+  // Two ways to move a driver: desktop mouse drag, or tap-to-pick then
+  // tap-to-place (the only way on touch screens, where HTML5 drag never fires).
+  const [drag, setDrag] = useState<number | null>(null);
+  const [picked, setPicked] = useState<number | null>(null);
 
   const driverById = useMemo(() => {
     const m = new Map<number, DriverVM>();
@@ -100,15 +91,45 @@ export function FleetBoard({
 
   const nav = (iso: string) => router.push(`/fleet?d=${iso}`);
 
-  const handleDrop = (toTruck: string) => {
-    if (!drag) return;
-    const { from, driverId } = drag;
+  const doMove = (driverId: number, toTruck: string) => {
     setDrag(null);
-    go(() => moveDriver(date, from, driverId, toTruck));
+    setPicked(null);
+    go(() => moveDriver(date, driverId, toTruck));
   };
 
+  const handleDrop = (toTruck: string) => {
+    if (drag != null) doMove(drag, toTruck);
+  };
+
+  /** Tap a chip: pick the driver up; tap the same driver again: put them down. */
+  const pick = (driverId: number) => setPicked((prev) => (prev === driverId ? null : driverId));
+  const pickedDriver = picked != null ? (driverById.get(picked) ?? null) : null;
+
+  // Escape cancels a picked-up driver.
+  useEffect(() => {
+    if (picked == null) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPicked(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picked]);
+
+  // Keep the board live for other dispatchers' edits: refresh when the tab
+  // comes back into view and once a minute while idle — never mid-move.
+  useEffect(() => {
+    if (drag != null || picked != null) return;
+    const refresh = () => {
+      if (!document.hidden && !pending) router.refresh();
+    };
+    const id = setInterval(refresh, 60_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [router, drag, picked, pending]);
+
   const regions = regionFilter === "All" ? catalog.regions : [regionFilter];
-  const weekend = isWeekendIso(date);
+  const weekend = isWeekendKey(date);
   const doctorCount = doctor.reduce((a, g) => a + g.items.length, 0);
 
   return (
@@ -117,7 +138,7 @@ export function FleetBoard({
       <div className="print-hide sticky top-14 z-30 -mx-5 mb-4 border-b border-slate-200 bg-brand-sand/70 px-5 py-3 backdrop-blur">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <button onClick={() => nav(addDaysIso(date, -1))} className={navBtn} aria-label="Previous day">
+            <button onClick={() => nav(addDaysKey(date, -1))} className={navBtn} aria-label="Previous day">
               ‹
             </button>
             <PickerField
@@ -127,11 +148,11 @@ export function FleetBoard({
               buttonLabel={fmtLong(date)}
               buttonClassName="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-brand-deep hover:bg-slate-50"
             />
-            <button onClick={() => nav(addDaysIso(date, 1))} className={navBtn} aria-label="Next day">
+            <button onClick={() => nav(addDaysKey(date, 1))} className={navBtn} aria-label="Next day">
               ›
             </button>
             <button
-              onClick={() => nav(isoToday())}
+              onClick={() => nav(todayKey())}
               className="ml-1 rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
             >
               Today
@@ -230,9 +251,13 @@ export function FleetBoard({
                               canEdit={canEdit}
                               onStatus={(s) => go(() => setTruckStatus(date, a.truck, s))}
                               onClearDriver={() => go(() => clearTruckDriver(date, a.truck))}
-                              dragActive={!!drag}
-                              onDragStartDriver={() => a.driverId != null && setDrag({ from: a.truck, driverId: a.driverId })}
+                              dragActive={drag != null}
+                              onDragStartDriver={() => a.driverId != null && setDrag(a.driverId)}
                               onDropDriver={() => handleDrop(a.truck)}
+                              onPickDriver={() => a.driverId != null && pick(a.driverId)}
+                              pickedDriver={a.driverId != null && a.driverId === picked}
+                              placeActive={canEdit && picked != null}
+                              onPlace={() => picked != null && doMove(picked, a.truck)}
                             />
                           ))}
                         </div>
@@ -287,11 +312,18 @@ export function FleetBoard({
               Spare drivers <span className="font-normal text-slate-400">({spares.length})</span>
             </div>
             <div className="mb-2 mt-0.5 text-[11px] text-slate-400">
-              {canEdit ? "Drag onto any truck to assign." : "Unassigned and available today."}
+              {canEdit ? "Drag onto a truck — or tap, then tap the truck." : "Unassigned and available today."}
             </div>
             <div className="flex max-h-[320px] flex-col gap-1.5 overflow-y-auto">
               {spares.slice(0, 80).map((d) => (
-                <DriverChip key={d.id} driver={d} draggable={canEdit} onDragStart={() => setDrag({ from: "pool", driverId: d.id })} />
+                <DriverChip
+                  key={d.id}
+                  driver={d}
+                  draggable={canEdit}
+                  onDragStart={() => setDrag(d.id)}
+                  onPick={canEdit ? () => pick(d.id) : undefined}
+                  picked={picked === d.id}
+                />
               ))}
               {spares.length === 0 && <div className="text-xs text-slate-400">Everyone is rostered.</div>}
             </div>
@@ -319,6 +351,23 @@ export function FleetBoard({
           </div>
         </aside>
       </div>
+
+      {/* Tap-to-place bar — shows while a driver is picked up. */}
+      {pickedDriver && (
+        <div className="print-hide fixed bottom-5 left-1/2 z-40 -translate-x-1/2">
+          <div className="flex items-center gap-3 rounded-full border border-brand-mid bg-white py-2 pl-4 pr-2 shadow-lg">
+            <span className="whitespace-nowrap text-sm text-slate-600">
+              Moving <b className="text-brand-deep">{pickedDriver.name}</b> — tap a truck to place
+            </span>
+            <button
+              onClick={() => setPicked(null)}
+              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

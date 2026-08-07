@@ -1,3 +1,4 @@
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "../client";
 
 /**
@@ -15,8 +16,8 @@ export const driverLeaveRepo = {
   },
 
   /** Approved leave covering a single day — drops drivers from the board. */
-  listApprovedOn(date: Date) {
-    return prisma.driverLeave.findMany({
+  listApprovedOn(date: Date, db: PrismaClient | Prisma.TransactionClient = prisma) {
+    return db.driverLeave.findMany({
       where: { status: "APPROVED", startDate: { lte: date }, endDate: { gte: date } },
       select: { driverId: true, leaveTypeCode: true },
     });

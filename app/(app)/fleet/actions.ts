@@ -18,32 +18,19 @@ function badDate(): ActionResult {
   return { ok: false, error: "Invalid date." };
 }
 
-/** Move/swap a driver onto a truck. `from` is the source truck id or "pool". */
-export async function moveDriver(
-  dateKey: string,
-  from: string,
-  driverId: number,
-  toTruck: string,
-): Promise<ActionResult> {
+/** Move/swap a driver onto a truck. The saved day decides the real source
+ *  truck — the client's view may be stale — and the whole move is one
+ *  transaction, so concurrent edits can't double-assign a driver. */
+export async function moveDriver(dateKey: string, driverId: number, toTruck: string): Promise<ActionResult> {
   const user = await requireEdit();
   if (!parseYmdOrNull(dateKey)) return badDate();
   try {
     const date = dateFromKey(dateKey);
-    await fleetBoardRepo.materialise(date, user.id);
-    const rows = await fleetBoardRepo.getBoard(date);
-    const target = rows.find((r) => r.truck === toTruck);
-    if (!target) return { ok: false, error: "Unknown truck." };
-    const displaced = target.driverId;
-    const changes: { truckId: string; driverId?: number | null; status?: string }[] = [
-      // Landing a driver on a "driver not in" truck brings it back on road.
-      { truckId: toTruck, driverId, ...(target.status === "OFF-ND" ? { status: "ON" } : {}) },
-    ];
-    if (from !== "pool" && from !== toTruck) changes.push({ truckId: from, driverId: displaced });
-    await fleetBoardRepo.applyChanges(date, changes, user.id);
+    const { from, displaced } = await fleetBoardRepo.moveDriver(date, driverId, toTruck, user.id);
 
     const driver = await fleetRepo.getDriver(driverId);
     const what =
-      from === "pool"
+      from == null
         ? `${driver?.name ?? `#${driverId}`} → ${toTruck}`
         : displaced != null
           ? `${driver?.name ?? `#${driverId}`} ⇄ ${toTruck} (swap with ${from})`

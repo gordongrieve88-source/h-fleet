@@ -1,3 +1,4 @@
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "../client";
 import { driverLeaveRepo } from "./driver-leave.repo";
 
@@ -8,11 +9,40 @@ export interface FleetBoardRow {
   time: string | null;
 }
 
+/** What a driver move actually did — feeds the audit line. */
+export interface MoveResult {
+  /** Truck the driver really came from on this date (server truth), or null (pool). */
+  from: string | null;
+  /** Driver who was on the target truck and got moved back/off, or null. */
+  displaced: number | null;
+}
+
+/** Either the shared client or the client bound to an open transaction. */
+type Db = PrismaClient | Prisma.TransactionClient;
+
+/** Concurrent first-edits of a day can both try to insert it; the loser hits
+ *  the (date, truckId) unique constraint. One retry then sees the saved rows. */
+async function retryOnUniqueClash<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    const clash =
+      (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") ||
+      String(e).includes("UNIQUE constraint");
+    if (!clash) throw e;
+    return await fn();
+  }
+}
+
 /**
  * The daily fleet board. A date with saved TruckAssignment rows returns those
  * (history); a date with none is synthesised from each truck's default driver
  * ("roll forward"), with anyone on approved leave dropped to "needs cover".
  * The first edit materialises the full day so it becomes saved history.
+ *
+ * Every write path runs inside ONE transaction (materialise + read + write),
+ * so two dispatchers editing the same day can't interleave into a
+ * double-assignment or a half-saved day.
  */
 export const fleetBoardRepo = {
   async getBoard(date: Date): Promise<FleetBoardRow[]> {
@@ -26,14 +56,14 @@ export const fleetBoardRepo = {
     return this.synthesise(date);
   },
 
-  async synthesise(date: Date): Promise<FleetBoardRow[]> {
+  async synthesise(date: Date, db: Db = prisma): Promise<FleetBoardRow[]> {
     const [trucks, onLeave] = await Promise.all([
-      prisma.truck.findMany({
+      db.truck.findMany({
         where: { isActive: true },
         orderBy: [{ region: "asc" }, { sortOrder: "asc" }],
         select: { id: true, defaultDriverId: true },
       }),
-      driverLeaveRepo.listApprovedOn(date),
+      driverLeaveRepo.listApprovedOn(date, db),
     ]);
     const leaveSet = new Set(onLeave.map((l) => l.driverId));
     return trucks.map((t) => {
@@ -52,11 +82,12 @@ export const fleetBoardRepo = {
     return (await prisma.truckAssignment.count({ where: { date } })) > 0;
   },
 
-  /** Write the full synthesised day if it isn't saved yet (idempotent). */
-  async materialise(date: Date, userId: number | null): Promise<void> {
-    if (await this.isMaterialised(date)) return;
-    const rows = await this.synthesise(date);
-    await prisma.truckAssignment.createMany({
+  /** Inside an open transaction: write the synthesised day if it isn't saved yet. */
+  async ensureMaterialised(tx: Db, date: Date, userId: number | null): Promise<void> {
+    const existing = await tx.truckAssignment.count({ where: { date } });
+    if (existing > 0) return;
+    const rows = await this.synthesise(date, tx);
+    await tx.truckAssignment.createMany({
       data: rows.map((r) => ({
         date,
         truckId: r.truck,
@@ -68,25 +99,82 @@ export const fleetBoardRepo = {
     });
   },
 
-  /** Apply one or more truck changes for a date (materialises first). */
+  /** Write the full synthesised day if it isn't saved yet (idempotent). */
+  async materialise(date: Date, userId: number | null): Promise<void> {
+    await retryOnUniqueClash(() =>
+      prisma.$transaction(async (tx) => this.ensureMaterialised(tx, date, userId)),
+    );
+  },
+
+  /** Apply one or more truck changes for a date (materialises first, atomically). */
   async applyChanges(
     date: Date,
     changes: { truckId: string; status?: string; driverId?: number | null; time?: string | null }[],
     userId: number | null,
   ): Promise<void> {
-    await this.materialise(date, userId);
-    await prisma.$transaction(
-      changes.map((c) =>
-        prisma.truckAssignment.update({
-          where: { date_truckId: { date, truckId: c.truckId } },
+    await retryOnUniqueClash(() =>
+      prisma.$transaction(async (tx) => {
+        await this.ensureMaterialised(tx, date, userId);
+        for (const c of changes) {
+          await tx.truckAssignment.update({
+            where: { date_truckId: { date, truckId: c.truckId } },
+            data: {
+              ...(c.status !== undefined ? { status: c.status } : {}),
+              ...(c.driverId !== undefined ? { driverId: c.driverId } : {}),
+              ...(c.time !== undefined ? { time: c.time } : {}),
+              updatedByUserId: userId,
+            },
+          });
+        }
+      }),
+    );
+  },
+
+  /**
+   * Move a driver onto a truck — the whole read-compute-write in one
+   * transaction. The driver's source truck comes from the SAVED day, not the
+   * caller's (possibly stale) view, so concurrent dispatchers can't create a
+   * double-assignment: every other row holding this driver is released, the
+   * displaced driver swaps back to the real source truck, and landing on a
+   * "driver not in" truck brings it back on road.
+   */
+  async moveDriver(date: Date, driverId: number, toTruck: string, userId: number | null): Promise<MoveResult> {
+    return retryOnUniqueClash(() =>
+      prisma.$transaction(async (tx) => {
+        await this.ensureMaterialised(tx, date, userId);
+        const target = await tx.truckAssignment.findUnique({
+          where: { date_truckId: { date, truckId: toTruck } },
+          select: { driverId: true, status: true },
+        });
+        if (!target) throw new Error("Unknown truck.");
+
+        // Where is this driver on the saved day right now? (Defensively treat
+        // "on several trucks" — a healed double-assignment — as source + extras.)
+        const sources = await tx.truckAssignment.findMany({
+          where: { date, driverId, truckId: { not: toTruck } },
+          select: { truckId: true },
+          orderBy: { truckId: "asc" },
+        });
+        const from = sources[0]?.truckId ?? null;
+        const displaced = target.driverId === driverId ? null : target.driverId;
+
+        await tx.truckAssignment.update({
+          where: { date_truckId: { date, truckId: toTruck } },
           data: {
-            ...(c.status !== undefined ? { status: c.status } : {}),
-            ...(c.driverId !== undefined ? { driverId: c.driverId } : {}),
-            ...(c.time !== undefined ? { time: c.time } : {}),
+            driverId,
+            // Landing a driver on a "driver not in" truck brings it back on road.
+            ...(target.status === "OFF-ND" ? { status: "ON" } : {}),
             updatedByUserId: userId,
           },
-        }),
-      ),
+        });
+        for (const [i, s] of sources.entries()) {
+          await tx.truckAssignment.update({
+            where: { date_truckId: { date, truckId: s.truckId } },
+            data: { driverId: i === 0 ? displaced : null, updatedByUserId: userId },
+          });
+        }
+        return { from, displaced };
+      }),
     );
   },
 
