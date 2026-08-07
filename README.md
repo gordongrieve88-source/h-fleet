@@ -11,6 +11,7 @@ into the H-Crew site as an extension — same shell, same seams.
 ```bash
 npm install
 npm run demo     # applies migrations, seeds the real fleet data, starts the dev server
+npm test         # unit + repository tests (Vitest); CI runs these on every push
 ```
 
 Open http://localhost:3002 (H-Fleet runs on **port 3002**; H-Crew owns 3001).
@@ -21,7 +22,7 @@ sidebar to view as a Supervisor or Manager (Gordon Grieve = full access).
 
 | Area | What it does |
 | --- | --- |
-| **Fleet board** | `/fleet` — the daily truck board: drag a driver between trucks (or in from the spare rail) to move/swap, change truck statuses (ON / OFF-BD / OFF-ND …), live availability % per region/block. Days **roll forward** from each truck's default driver; the first edit saves the whole day as reportable history. The **Fleet doctor** rail flags needs-cover, on-leave-but-rostered, double-assigned drivers, breakdowns and trucks with no default driver. |
+| **Fleet board** | `/fleet` — the daily truck board: drag a driver between trucks (or in from the spare rail) to move/swap — on touch screens, tap the driver then tap the truck — change truck statuses (ON / OFF-BD / OFF-ND …), live availability % per region/block. Moves are transactional server-side (two dispatchers can't double-assign a driver) and the board quietly re-syncs every minute. Days **roll forward** from each truck's default driver; the first edit saves the whole day as reportable history. The **Fleet doctor** rail flags needs-cover, on-leave-but-rostered, double-assigned drivers, breakdowns and trucks with no default driver. |
 | **Driver leave** | `/fleet/leave` — month grid per depot × driver; book directly or submit as a request; AL balance shown inline; depot-stretch (≥30 % off) and fleet spare-buffer alerts. Approved leave drops the driver off their truck on the board. |
 | **Approvals** | `/approvals` — driver leave requests with depot-stretch impact warnings, bulk approve and a 30-day decision history. |
 | **Fleet reports** | `/fleet/reports` — leave taken (with AL balances), truck utilisation and daily availability over captured days; CSV export, print/PDF. |

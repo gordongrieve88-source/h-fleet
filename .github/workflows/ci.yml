@@ -1,0 +1,40 @@
+# Every push and PR: lint, typecheck, unit + repository tests, then prove the
+# migrations + seed build a working database and the app compiles against it.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 20 = the RHEL8 deploy target (deploy/README.md); 22 = current LTS.
+        node-version: [20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Migrate + seed (smoke-test the demo database)
+        run: npm run setup
+
+      - name: Build
+        run: npm run build
