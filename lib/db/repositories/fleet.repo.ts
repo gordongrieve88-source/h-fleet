@@ -66,6 +66,9 @@ export const fleetRepo = {
   setTruckActive(id: string, isActive: boolean) {
     return prisma.truck.update({ where: { id }, data: { isActive } });
   },
+  getTruck(id: string) {
+    return prisma.truck.findUnique({ where: { id }, include: { depot: true } });
+  },
 
   listAllDepots() {
     return prisma.depot.findMany({

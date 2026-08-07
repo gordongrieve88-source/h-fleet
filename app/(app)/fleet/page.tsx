@@ -1,4 +1,4 @@
-import { canEdit } from "@/lib/auth";
+import { canEdit, getDepotScope } from "@/lib/auth";
 import { fleetBoardRepo, driverLeaveRepo, referenceRepo } from "@/lib/db/repositories";
 import { loadFleetCatalog } from "@/lib/fleet/catalog";
 import { isOnRoad } from "@/lib/wfm/fleet";
@@ -13,14 +13,18 @@ export default async function FleetBoardPage({ searchParams }: { searchParams: P
   const date = parseYmdOrNull(d ?? null) ?? todayUTC();
   const dateKey = ymd(date);
 
-  const [catalog, rows, onLeaveRaw, leaveTypes, isCaptured, editor] = await Promise.all([
+  const [catalog, rows, onLeaveRaw, leaveTypes, isCaptured, editor, depotScope] = await Promise.all([
     loadFleetCatalog(),
     fleetBoardRepo.getBoard(date),
     driverLeaveRepo.listApprovedOn(date),
     referenceRepo.listLeaveTypes(),
     fleetBoardRepo.isMaterialised(date),
     canEdit(),
+    getDepotScope(),
   ]);
+  // Depot names this user may edit; null = all of them.
+  const editableDepots =
+    depotScope === null ? null : catalog.depots.filter((dep) => depotScope.includes(dep.id)).map((dep) => dep.name);
 
   // ---- Fleet doctor: scan today's board for things a dispatcher must fix ----
   const driverById = new Map(catalog.drivers.map((dr) => [dr.id, dr]));
@@ -87,6 +91,7 @@ export default async function FleetBoardPage({ searchParams }: { searchParams: P
         leaveTypes={leaveTypes.map((t) => ({ code: t.code, name: t.name, color: t.colorHex ?? "#64748b" }))}
         doctor={doctor}
         canEdit={editor}
+        editableDepots={editableDepots}
         isCaptured={isCaptured}
       />
     </div>

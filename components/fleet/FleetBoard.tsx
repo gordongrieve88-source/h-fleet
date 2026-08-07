@@ -34,6 +34,7 @@ export function FleetBoard({
   leaveTypes,
   doctor,
   canEdit,
+  editableDepots,
   isCaptured,
 }: {
   date: string;
@@ -43,6 +44,8 @@ export function FleetBoard({
   leaveTypes: LeaveTypeVM[];
   doctor: DoctorIssueGroup[];
   canEdit: boolean;
+  /** Depot names this user may edit; null = unrestricted. */
+  editableDepots: string[] | null;
   /** Whether this day is saved history vs a live roll-forward synthesis. */
   isCaptured: boolean;
 }) {
@@ -64,6 +67,13 @@ export function FleetBoard({
   const truckBlock = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.block])), [catalog.trucks]);
   const truckRegion = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.region])), [catalog.trucks]);
   const truckType = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.type])), [catalog.trucks]);
+  // Per-truck editability: the user's role AND their depot scope must allow it.
+  const editableSet = useMemo(() => (editableDepots === null ? null : new Set(editableDepots)), [editableDepots]);
+  const rowEditable = useMemo(() => {
+    const depotByTruck = Object.fromEntries(catalog.trucks.map((t) => [t.id, t.depot]));
+    return (truckId: string) => canEdit && (editableSet === null || editableSet.has(depotByTruck[truckId]));
+  }, [catalog.trucks, canEdit, editableSet]);
+  const canReset = canEdit && editableSet === null; // resetting sweeps every depot
   // Show a type tag on the board only when the fleet actually has mixed types.
   const mixedTypes = useMemo(() => new Set(catalog.trucks.map((t) => t.type)).size > 1, [catalog.trucks]);
   const blocksByRegion = useMemo(() => {
@@ -198,7 +208,7 @@ export function FleetBoard({
               {r}
             </button>
           ))}
-          {canEdit && isCaptured && (
+          {canReset && isCaptured && (
             <button
               onClick={() => {
                 if (window.confirm("Discard every edit on this day and revert to the roll-forward default?")) {
@@ -248,7 +258,7 @@ export function FleetBoard({
                               typeTag={mixedTypes ? (truckType[a.truck] ?? null) : null}
                               driver={a.driverId != null ? (driverById.get(a.driverId) ?? null) : null}
                               statusCodes={STATUS_CODES}
-                              canEdit={canEdit}
+                              canEdit={rowEditable(a.truck)}
                               onStatus={(s) => go(() => setTruckStatus(date, a.truck, s))}
                               onClearDriver={() => go(() => clearTruckDriver(date, a.truck))}
                               dragActive={drag != null}
@@ -256,7 +266,7 @@ export function FleetBoard({
                               onDropDriver={() => handleDrop(a.truck)}
                               onPickDriver={() => a.driverId != null && pick(a.driverId)}
                               pickedDriver={a.driverId != null && a.driverId === picked}
-                              placeActive={canEdit && picked != null}
+                              placeActive={rowEditable(a.truck) && picked != null}
                               onPlace={() => picked != null && doMove(picked, a.truck)}
                             />
                           ))}

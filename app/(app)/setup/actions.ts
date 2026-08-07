@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireEdit } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { referenceRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 
@@ -12,7 +12,7 @@ function refresh() {
 }
 
 export async function createLeaveTypeAction(formData: FormData): Promise<void> {
-  const user = await requireEdit();
+  const user = await requireManager();
   const code = String(formData.get("code") ?? "").trim().toUpperCase();
   const name = String(formData.get("name") ?? "").trim();
   if (!code || !name) return;
@@ -27,7 +27,7 @@ export async function createLeaveTypeAction(formData: FormData): Promise<void> {
 }
 
 export async function updateLeaveTypeAction(formData: FormData): Promise<void> {
-  const user = await requireEdit();
+  const user = await requireManager();
   const code = String(formData.get("code"));
   await referenceRepo.updateLeaveType(code, {
     name: String(formData.get("name") ?? "").trim(),
@@ -39,7 +39,7 @@ export async function updateLeaveTypeAction(formData: FormData): Promise<void> {
 }
 
 export async function toggleLeaveTypeActive(formData: FormData): Promise<void> {
-  const user = await requireEdit();
+  const user = await requireManager();
   const code = String(formData.get("code"));
   const active = String(formData.get("active")) === "true";
   await referenceRepo.setLeaveTypeActive(code, active);
@@ -48,7 +48,7 @@ export async function toggleLeaveTypeActive(formData: FormData): Promise<void> {
 }
 
 export async function createHolidayAction(formData: FormData): Promise<void> {
-  const user = await requireEdit();
+  const user = await requireManager();
   const date = String(formData.get("date") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !name) return;
@@ -60,7 +60,7 @@ export async function createHolidayAction(formData: FormData): Promise<void> {
 }
 
 export async function deleteHolidayAction(formData: FormData): Promise<void> {
-  const user = await requireEdit();
+  const user = await requireManager();
   const id = Number(formData.get("id"));
   if (!id) return;
   await referenceRepo.deleteHoliday(id);

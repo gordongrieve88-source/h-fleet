@@ -190,6 +190,22 @@ async function main() {
     });
   }
 
+  // Scope the demo supervisor to the two biggest depots so the per-depot
+  // permission model is visible out of the box (deleting depots above
+  // cascaded any previous scope rows).
+  const demoSupervisor = await prisma.appUser.findUnique({ where: { email: "supervisor@h-fleet.demo" } });
+  if (demoSupervisor) {
+    const biggest = await prisma.depot.findMany({
+      orderBy: { drivers: { _count: "desc" } },
+      take: 2,
+      select: { id: true, name: true },
+    });
+    for (const dep of biggest) {
+      await prisma.userDepotScope.create({ data: { userId: demoSupervisor.id, depotId: dep.id } });
+    }
+    console.log(`Scoped ${demoSupervisor.displayName} to: ${biggest.map((d) => d.name).join(", ")}`);
+  }
+
   // Booked leave from the workbook (all APPROVED)…
   const dateUTC = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
   for (const l of FLEET_LEAVE) {

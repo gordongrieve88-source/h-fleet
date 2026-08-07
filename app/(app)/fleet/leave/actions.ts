@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireEdit } from "@/lib/auth";
+import { requireEdit, requireEditForDepot } from "@/lib/auth";
 import { driverLeaveRepo, fleetRepo, notificationRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 import { dateFromKey, parseYmdOrNull, fmtRange } from "@/lib/wfm/date";
@@ -33,6 +33,7 @@ export async function addDriverLeave(
   try {
     const driver = await fleetRepo.getDriver(driverId);
     if (!driver || !driver.isActive) return { ok: false, error: "Unknown driver." };
+    await requireEditForDepot(driver.depotId, user); // leave is scoped by the driver's depot
     for (const s of segments) {
       await driverLeaveRepo.add({
         driverId,
@@ -69,6 +70,9 @@ export async function addDriverLeave(
 export async function removeDriverLeave(id: number): Promise<ActionResult> {
   const user = await requireEdit();
   try {
+    const existing = await driverLeaveRepo.getById(id);
+    if (!existing) return { ok: false, error: "That booking no longer exists." };
+    await requireEditForDepot(existing.driver.depotId, user);
     const rec = await driverLeaveRepo.remove(id);
     await logAction(
       user,
@@ -79,7 +83,9 @@ export async function removeDriverLeave(id: number): Promise<ActionResult> {
     );
     refresh();
     return { ok: true };
-  } catch {
+  } catch (e) {
+    const msg = String(e);
+    if (msg.includes("Forbidden")) return { ok: false, error: msg.replace(/^Error:\s*/, "").slice(0, 160) };
     return { ok: false, error: "That booking no longer exists." };
   }
 }

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { isEditRole } from "@/lib/auth/roles";
+import { isManagerRole } from "@/lib/auth/roles";
 import { fleetRepo } from "@/lib/db/repositories";
 import { PageHeader } from "@/components/PageHeader";
 import { DepotsAdmin } from "@/components/fleet/DepotsAdmin";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function FleetDepotsPage() {
   const user = await getCurrentUser();
-  if (!isEditRole(user?.role)) redirect("/fleet");
+  if (!isManagerRole(user?.role)) redirect("/fleet");
 
   const [depots, regions] = await Promise.all([fleetRepo.listAllDepots(), fleetRepo.listAllRegions()]);
 

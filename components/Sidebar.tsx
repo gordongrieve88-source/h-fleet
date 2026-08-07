@@ -13,7 +13,7 @@ import {
   IconTruck,
 } from "./Icons";
 
-type Access = "all" | "approve" | "insights" | "edit";
+type Access = "all" | "approve" | "insights" | "edit" | "admin";
 
 const GROUPS: {
   label: string | null;
@@ -27,7 +27,7 @@ const GROUPS: {
       { href: "/fleet/reports", label: "Fleet reports", access: "insights", icon: IconChart },
       { href: "/fleet/drivers", label: "Drivers", access: "edit", icon: IconPeople },
       { href: "/fleet/trucks", label: "Trucks", access: "edit", icon: IconTruck },
-      { href: "/fleet/depots", label: "Depots", access: "edit", icon: IconSettings },
+      { href: "/fleet/depots", label: "Depots", access: "admin", icon: IconSettings },
     ],
   },
   {
@@ -39,7 +39,7 @@ const GROUPS: {
   },
   {
     label: "Admin",
-    links: [{ href: "/setup", label: "Setup", access: "edit", icon: IconSettings }],
+    links: [{ href: "/setup", label: "Setup", access: "admin", icon: IconSettings }],
   },
 ];
 
@@ -53,11 +53,14 @@ export function Sidebar({
   canEdit,
   canApprove,
   canInsights,
+  canManage,
   userCard,
 }: {
   canEdit: boolean;
   canApprove: boolean;
   canInsights: boolean;
+  /** Manager-only areas: org structure (Depots) and Setup. */
+  canManage: boolean;
   /** Server-rendered user block (name, role badge, switcher) slotted in. */
   userCard: React.ReactNode;
 }) {
@@ -66,7 +69,8 @@ export function Sidebar({
     access === "all" ||
     (access === "approve" && canApprove) ||
     (access === "insights" && canInsights) ||
-    (access === "edit" && canEdit);
+    (access === "edit" && canEdit) ||
+    (access === "admin" && canManage);
 
   return (
     <aside className="on-dark print-hide sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-brand-deep text-white">

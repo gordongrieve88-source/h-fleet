@@ -66,6 +66,20 @@ model AppUser {
   updatedAt DateTime @updatedAt
 
   notifications Notification[]
+  depotScopes   UserDepotScope[]
+}
+
+/// Limits a SUPERVISOR to specific depots. No rows = unrestricted (scoping is
+/// an opt-in restriction); MANAGER ignores scope entirely. Enforced in
+/// lib/auth (requireEditForDepot) on every scoped write path.
+model UserDepotScope {
+  userId  Int
+  depotId Int
+
+  user  AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  depot Depot   @relation(fields: [depotId], references: [id], onDelete: Cascade)
+
+  @@id([userId, depotId])
 }
 
 // ============================================================================
@@ -133,9 +147,10 @@ model Depot {
   sortOrder  Int     @default(0)
   isActive   Boolean @default(true)
 
-  region  FleetRegion @relation(fields: [regionName], references: [name])
-  drivers Driver[]
-  trucks  Truck[]
+  region           FleetRegion      @relation(fields: [regionName], references: [name])
+  drivers          Driver[]
+  trucks           Truck[]
+  supervisorScopes UserDepotScope[]
 
   @@index([regionName])
 }

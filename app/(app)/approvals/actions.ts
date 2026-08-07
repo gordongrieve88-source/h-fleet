@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireApprover } from "@/lib/auth";
+import { requireApprover, requireEditForDepot, getDepotScope } from "@/lib/auth";
+import { depotInScope } from "@/lib/auth/scope";
 import { driverLeaveRepo, fleetBoardRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 import { fmtRange } from "@/lib/wfm/date";
@@ -16,6 +17,14 @@ function refresh() {
 
 export async function decideDriverLeave(id: number, approve: boolean, note: string | null): Promise<ActionResult> {
   const user = await requireApprover();
+  const pendingRec = await driverLeaveRepo.getById(id);
+  if (!pendingRec) return { ok: false, error: "That request has already been decided or withdrawn." };
+  try {
+    // Approvals are scoped by the driver's depot, like every other edit.
+    await requireEditForDepot(pendingRec.driver.depotId, user);
+  } catch (e) {
+    return { ok: false, error: String(e).replace(/^Error:\s*/, "").slice(0, 160) };
+  }
   let rec;
   try {
     rec = await driverLeaveRepo.decide(id, approve ? "APPROVED" : "REJECTED", user.id, note?.trim().slice(0, 240) || null);
@@ -40,8 +49,9 @@ export async function decideDriverLeave(id: number, approve: boolean, note: stri
 }
 
 export async function approveAllPendingDriverLeave(): Promise<ActionResult & { count?: number }> {
-  await requireApprover();
-  const pending = await driverLeaveRepo.listPending();
+  const user = await requireApprover();
+  const scope = await getDepotScope(user);
+  const pending = (await driverLeaveRepo.listPending()).filter((lv) => depotInScope(scope, lv.driver.depotId));
   let count = 0;
   for (const lv of pending) {
     const res = await decideDriverLeave(lv.id, true, null);

@@ -77,11 +77,55 @@ sudo firewall-cmd --reload
 
 TLS: `sudo dnf install certbot python3-certbot-nginx && sudo certbot --nginx`.
 
-## 8. Sign-in
+## 8. Sign-in (Microsoft Entra ID)
 
-The demo cookie role-switcher still works behind the proxy. For corporate
-sign-in, `lib/auth/index.ts` is the only file to change (the auth seam) —
-swap the cookie lookup for the Entra ID / SSO identity.
+Corporate SSO is configuration, not a code change — set `AUTH_MODE=entra`
+in the stored config file and fill in the `ENTRA_*` / `SESSION_SECRET`
+fields. One-time setup in the Azure portal (**App registrations**):
+
+1. **Register an app** — e.g. "H-Fleet". Redirect URI (type *Web*):
+   `https://<your-host>/auth/callback` — must match `ENTRA_REDIRECT_URI`
+   exactly.
+2. **Certificates & secrets** → new client secret → `ENTRA_CLIENT_SECRET`.
+   (Diary the expiry — rotating it is editing the config file + restart.)
+3. **App roles** → create three roles whose *values* are exactly
+   `Manager`, `Supervisor`, `Staff`, assignable to users/groups.
+4. **Enterprise application** → assign your AD users/groups to those roles.
+   The token's roles claim then drives `AppUser.role` on every sign-in;
+   accounts with no role claim keep their app-assigned role (new ones start
+   as view-only Staff).
+5. Overview page → copy the **Directory (tenant) ID** and **Application
+   (client) ID** into the config file, generate `SESSION_SECRET`
+   (`openssl rand -base64 48`), then `sudo systemctl restart h-fleet`.
+
+Notes:
+- First sign-in auto-provisions the AppUser (matched to a pre-created
+  account by email if one exists) and records it in the Activity feed.
+- Deactivating someone in H-Fleet blocks them even while their Entra
+  account is still live — and vice versa, disabling in Entra stops new
+  sign-ins at the door.
+- Wallboard TVs skip SSO with `WALLBOARD_TOKEN` (see the config file
+  comments). Rotate the token to revoke every TV at once.
+- Depot-scoped supervisors: rows in the `UserDepotScope` table limit a
+  SUPERVISOR to specific depots (no rows = unrestricted).
+
+## 9. Backups
+
+The database is the only state — the app tree is reproducible from git.
+
+- **SQL Server**: use your DBA's normal full+log backup schedule; H-Fleet
+  needs nothing special. Point-in-time restore is the target (RPO ≤ 1h is
+  comfortable for a rostering tool; the spreadsheet era had none).
+- **Local/demo SQLite**: `sqlite3 prisma/dev.db ".backup backup.db"`.
+- After any restore: `systemctl restart h-fleet` and check `/api/health`.
+
+## 10. Monitoring
+
+- `GET /api/health` → `{"ok":true,"db":"up"}` (200) or 503 — wire this
+  into your uptime monitor; it exercises the app AND the database.
+- `journalctl -u h-fleet -f` — app logs (systemd captures stdout).
+- The systemd unit restarts the app on crash; nginx returns 502 while it
+  comes back, which your monitor will catch via /api/health.
 
 ## Troubleshooting
 
@@ -90,3 +134,8 @@ swap the cookie lookup for the Entra ID / SSO identity.
 - Connection refused to SQL Server → check `DB_ENCRYPT` /
   `DB_TRUST_SERVER_CERTIFICATE` against how the server's TLS is set up, and
   that port 1433 is reachable (`nc -vz $DB_HOST 1433`).
+- Redirect loop on sign-in → `ENTRA_REDIRECT_URI` doesn't match the app
+  registration, or the TLS-terminating proxy isn't passing
+  `X-Forwarded-Proto https`.
+- "Sign-in failed" page → `journalctl -u h-fleet` has the underlying
+  openid-client error (clock skew, bad secret, consent not granted).

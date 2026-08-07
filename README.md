@@ -2,9 +2,11 @@
 
 The standalone daily truck/driver board for the metro agitator fleet —
 **194 drivers, 148 trucks, 13 depots** — ported from the HMA Metro Roster
-spreadsheet. Local demo today; built to deploy to Azure (App Service +
-Azure SQL + Microsoft Entra ID sign-in), and designed to later plug back
-into the H-Crew site as an extension — same shell, same seams.
+spreadsheet. Local demo today; production target is a **RHEL8 VM behind
+nginx with SQL Server and Microsoft Entra ID sign-in** (`deploy/` has the
+full kit — Azure App Service works through the same seams if the hosting
+decision changes). Designed to later plug back into the H-Crew site as an
+extension — same shell, same seams.
 
 ## Run it
 
@@ -38,8 +40,12 @@ sidebar to view as a Supervisor or Manager (Gordon Grieve = full access).
 1. **Schema** — `prisma/schema.prisma` is the production schema. SQLite for the
    demo; change the provider to `sqlserver` + connection string for Azure SQL.
 2. **Auth** — `lib/auth/index.ts` is the only module that knows who is signed
-   in. Demo: a cookie + role switcher. Production: replace one function body
-   to read the Entra ID identity. All role checks stay identical.
+   in, and switching it is now configuration, not code: `AUTH_MODE=demo`
+   (cookie + role switcher) or `AUTH_MODE=entra` (Microsoft Entra ID
+   sign-in — OIDC + PKCE, signed session cookie, JIT user provisioning,
+   roles from Entra app roles; see `deploy/README.md`). Supervisors can be
+   scoped to specific depots (`UserDepotScope`), enforced on every write.
+   All role checks stay identical in both modes.
 3. **Data access** — every query goes through `lib/db/repositories/*` via the
    single client in `lib/db/client.ts`.
 

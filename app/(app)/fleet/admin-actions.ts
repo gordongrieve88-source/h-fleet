@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireEdit } from "@/lib/auth";
+import { requireEdit, requireEditForDepot, requireManager } from "@/lib/auth";
 import { fleetRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 
@@ -37,7 +37,10 @@ export async function saveDriver(input: {
   try {
     if (!input.name.trim() || !input.employeeNo.trim()) return { ok: false, error: "Name and employee number are required." };
     const data = { employeeNo: input.employeeNo.trim(), name: input.name.trim(), depotId: input.depotId, workgroup: input.workgroup.trim() };
+    await requireEditForDepot(input.depotId, user); // the depot the driver will belong to
     if (input.id) {
+      const current = await fleetRepo.getDriver(input.id);
+      if (current) await requireEditForDepot(current.depotId, user); // and the one they leave
       await fleetRepo.updateDriver(input.id, data);
       await logAction(user, "fleet.driver.update", "Driver", input.id, `Updated driver ${data.name} (#${data.employeeNo})`);
     } else {
@@ -54,6 +57,8 @@ export async function saveDriver(input: {
 export async function setDriverActive(id: number, isActive: boolean): Promise<ActionResult> {
   const user = await requireEdit();
   try {
+    const current = await fleetRepo.getDriver(id);
+    if (current) await requireEditForDepot(current.depotId, user);
     const row = await fleetRepo.setDriverActive(id, isActive);
     await logAction(user, "fleet.driver.active", "Driver", id, `${isActive ? "Reactivated" : "Deactivated"} driver ${row.name}`);
     refresh();
@@ -84,10 +89,13 @@ export async function saveTruck(input: {
       type: input.type.trim() || "Agitator",
       defaultDriverId: input.defaultDriverId,
     };
+    await requireEditForDepot(input.depotId, user); // the depot the truck will belong to
     if (input.isNew) {
       await fleetRepo.createTruck({ id, ...data });
       await logAction(user, "fleet.truck.create", "Truck", null, `Added truck ${id} (${data.block})`);
     } else {
+      const current = await fleetRepo.getTruck(id);
+      if (current) await requireEditForDepot(current.depotId, user); // and the one it leaves
       await fleetRepo.updateTruck(id, data);
       await logAction(user, "fleet.truck.update", "Truck", null, `Updated truck ${id} (${data.block})`);
     }
@@ -101,6 +109,8 @@ export async function saveTruck(input: {
 export async function setTruckActive(id: string, isActive: boolean): Promise<ActionResult> {
   const user = await requireEdit();
   try {
+    const current = await fleetRepo.getTruck(id);
+    if (current) await requireEditForDepot(current.depotId, user);
     await fleetRepo.setTruckActive(id, isActive);
     await logAction(user, "fleet.truck.active", "Truck", null, `${isActive ? "Reactivated" : "Deactivated"} truck ${id}`);
     refresh();
@@ -110,9 +120,9 @@ export async function setTruckActive(id: string, isActive: boolean): Promise<Act
   }
 }
 
-// ---- depots ---------------------------------------------------------------------
+// ---- depots (org structure — managers only) ---------------------------------
 export async function saveDepot(input: { id?: number; name: string; regionName: string }): Promise<ActionResult> {
-  const user = await requireEdit();
+  const user = await requireManager();
   try {
     if (!input.name.trim() || !input.regionName) return { ok: false, error: "Name and region are required." };
     if (input.id) {
@@ -130,7 +140,7 @@ export async function saveDepot(input: { id?: number; name: string; regionName: 
 }
 
 export async function setDepotActive(id: number, isActive: boolean): Promise<ActionResult> {
-  const user = await requireEdit();
+  const user = await requireManager();
   try {
     const row = await fleetRepo.setDepotActive(id, isActive);
     await logAction(user, "fleet.depot.active", "Depot", id, `${isActive ? "Reactivated" : "Deactivated"} depot ${row.name}`);
@@ -141,9 +151,9 @@ export async function setDepotActive(id: number, isActive: boolean): Promise<Act
   }
 }
 
-// ---- regions ---------------------------------------------------------------------
+// ---- regions (org structure — managers only) --------------------------------
 export async function createFleetRegion(name: string): Promise<ActionResult> {
-  const user = await requireEdit();
+  const user = await requireManager();
   try {
     if (!name.trim()) return { ok: false, error: "Region name is required." };
     await fleetRepo.createRegion(name.trim());
@@ -156,7 +166,7 @@ export async function createFleetRegion(name: string): Promise<ActionResult> {
 }
 
 export async function setFleetRegionActive(name: string, isActive: boolean): Promise<ActionResult> {
-  const user = await requireEdit();
+  const user = await requireManager();
   try {
     await fleetRepo.setRegionActive(name, isActive);
     await logAction(user, "fleet.region.active", "FleetRegion", null, `${isActive ? "Reactivated" : "Deactivated"} fleet region ${name}`);

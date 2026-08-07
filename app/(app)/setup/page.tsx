@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { isEditRole } from "@/lib/auth/roles";
+import { isManagerRole } from "@/lib/auth/roles";
 import { referenceRepo } from "@/lib/db/repositories";
 import { PageHeader, Card } from "@/components/PageHeader";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -20,7 +20,7 @@ const saveBtn = "rounded-lg bg-brand-mid px-3 py-1 text-xs font-semibold text-wh
 
 export default async function SetupPage() {
   const user = await getCurrentUser();
-  if (!isEditRole(user?.role)) redirect("/fleet");
+  if (!isManagerRole(user?.role)) redirect("/fleet");
 
   const [leaveTypes, holidays] = await Promise.all([
     referenceRepo.listAllLeaveTypes(),

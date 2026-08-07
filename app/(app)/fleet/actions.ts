@@ -1,11 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireEdit } from "@/lib/auth";
+import { requireEdit, requireEditForDepot, requireUnrestrictedEdit } from "@/lib/auth";
 import { fleetBoardRepo, fleetRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 import { dateFromKey, parseYmdOrNull, fmtDate } from "@/lib/wfm/date";
 import { statusLabel } from "@/lib/wfm/fleet";
+import type { AppUser } from "@/generated/prisma/client";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -18,6 +19,13 @@ function badDate(): ActionResult {
   return { ok: false, error: "Invalid date." };
 }
 
+/** Edits to a truck's board row are scoped by the truck's home depot. */
+async function requireEditForTruck(truckId: string, user: AppUser): Promise<void> {
+  const truck = await fleetRepo.getTruck(truckId);
+  if (!truck) throw new Error("Unknown truck.");
+  await requireEditForDepot(truck.depotId, user);
+}
+
 /** Move/swap a driver onto a truck. The saved day decides the real source
  *  truck — the client's view may be stale — and the whole move is one
  *  transaction, so concurrent edits can't double-assign a driver. */
@@ -25,6 +33,7 @@ export async function moveDriver(dateKey: string, driverId: number, toTruck: str
   const user = await requireEdit();
   if (!parseYmdOrNull(dateKey)) return badDate();
   try {
+    await requireEditForTruck(toTruck, user);
     const date = dateFromKey(dateKey);
     const { from, displaced } = await fleetBoardRepo.moveDriver(date, driverId, toTruck, user.id);
 
@@ -47,6 +56,7 @@ export async function setTruckStatus(dateKey: string, truckId: string, status: s
   const user = await requireEdit();
   if (!parseYmdOrNull(dateKey)) return badDate();
   try {
+    await requireEditForTruck(truckId, user);
     const date = dateFromKey(dateKey);
     await fleetBoardRepo.applyChanges(date, [{ truckId, status }], user.id);
     await logAction(user, "fleet.status", "TruckAssignment", null, `${truckId} → ${status} (${statusLabel(status)}) on ${fmtDate(date)}`);
@@ -61,6 +71,7 @@ export async function clearTruckDriver(dateKey: string, truckId: string): Promis
   const user = await requireEdit();
   if (!parseYmdOrNull(dateKey)) return badDate();
   try {
+    await requireEditForTruck(truckId, user);
     const date = dateFromKey(dateKey);
     await fleetBoardRepo.applyChanges(date, [{ truckId, driverId: null }], user.id);
     await logAction(user, "fleet.clear", "TruckAssignment", null, `Cleared driver off ${truckId} on ${fmtDate(date)}`);
@@ -71,9 +82,10 @@ export async function clearTruckDriver(dateKey: string, truckId: string): Promis
   }
 }
 
-/** Discard a day's edits — the board reverts to the roll-forward default. */
+/** Discard a day's edits — the board reverts to the roll-forward default.
+ *  Sweeps every depot at once, so depot-scoped supervisors can't use it. */
 export async function resetBoardDay(dateKey: string): Promise<ActionResult> {
-  const user = await requireEdit();
+  const user = await requireUnrestrictedEdit();
   if (!parseYmdOrNull(dateKey)) return badDate();
   try {
     const date = dateFromKey(dateKey);

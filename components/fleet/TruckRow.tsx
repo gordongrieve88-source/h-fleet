@@ -53,7 +53,8 @@ export function TruckRow({
   return (
     <div
       onDragOver={(e) => {
-        if (dragActive) {
+        // Not preventing default = the row refuses the drop (out-of-scope rows).
+        if (dragActive && canEdit) {
           e.preventDefault();
           setOver(true);
         }
@@ -61,12 +62,12 @@ export function TruckRow({
       onDragLeave={() => setOver(false)}
       onDrop={() => {
         setOver(false);
-        onDropDriver();
+        if (canEdit) onDropDriver();
       }}
       onClick={(e) => {
         // While a driver is picked up, the whole row is a tap target — except
         // its own controls (status select, clear ×), which keep their meaning.
-        if (!placeActive) return;
+        if (!placeActive || !canEdit) return;
         if ((e.target as HTMLElement).closest("select,button")) return;
         onPlace();
       }}

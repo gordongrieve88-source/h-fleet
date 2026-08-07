@@ -21,6 +21,7 @@ export interface TruckVM {
 }
 
 export interface DepotVM {
+  id: number;
   name: string;
   region: string;
   trucks: number;
@@ -68,6 +69,7 @@ export async function loadFleetCatalog(): Promise<FleetCatalogVM> {
   return {
     regions: regions.map((r) => r.name),
     depots: depots.map((d) => ({
+      id: d.id,
       name: d.name,
       region: d.regionName,
       trucks: d._count.trucks,
