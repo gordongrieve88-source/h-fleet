@@ -13,6 +13,7 @@ import {
   createCredentialTypeAction,
   updateCredentialTypeAction,
   toggleCredentialTypeActive,
+  deleteCredentialTypeAction,
   createHolidayAction,
   deleteHolidayAction,
 } from "./actions";
@@ -117,13 +118,37 @@ export default async function SetupPage() {
                   Save
                 </SubmitButton>
               </form>
-              <form action={toggleCredentialTypeActive} className="mt-0.5">
-                <input type="hidden" name="code" value={ct.code} />
-                <input type="hidden" name="active" value={ct.isActive ? "false" : "true"} />
-                <SubmitButton className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline" savedToast={ct.isActive ? `${ct.code} hidden` : `${ct.code} reactivated`}>
-                  {ct.isActive ? "Hide" : "Reactivate"}
-                </SubmitButton>
-              </form>
+              <div className="mt-0.5 flex items-center gap-3">
+                <form action={toggleCredentialTypeActive}>
+                  <input type="hidden" name="code" value={ct.code} />
+                  <input type="hidden" name="active" value={ct.isActive ? "false" : "true"} />
+                  <SubmitButton
+                    className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    savedToast={ct.isActive ? `${ct.code} hidden — records kept` : `${ct.code} reactivated`}
+                  >
+                    {ct.isActive ? "Hide" : "Reactivate"}
+                  </SubmitButton>
+                </form>
+                <form action={deleteCredentialTypeAction}>
+                  <input type="hidden" name="code" value={ct.code} />
+                  <SubmitButton
+                    className="text-[11px] text-rose-600 hover:underline"
+                    savedToast={`${ct.code} removed`}
+                    confirmMessage={
+                      ct._count.credentials > 0
+                        ? `Remove "${ct.name}" entirely?\n\n${ct._count.credentials} driver record${ct._count.credentials === 1 ? "" : "s"} will be deleted with it. This can't be undone — use Hide instead to retire it and keep the history.`
+                        : `Remove "${ct.name}"? No drivers hold it, so nothing else is affected.`
+                    }
+                  >
+                    Remove
+                  </SubmitButton>
+                </form>
+                <span className="text-[11px] text-slate-300">
+                  {ct._count.credentials > 0
+                    ? `${ct._count.credentials} driver${ct._count.credentials === 1 ? "" : "s"}`
+                    : "unused"}
+                </span>
+              </div>
             </li>
           ))}
         </ul>

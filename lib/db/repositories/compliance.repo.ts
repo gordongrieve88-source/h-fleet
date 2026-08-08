@@ -11,8 +11,13 @@ export const complianceRepo = {
   listTypes() {
     return prisma.credentialType.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
   },
+  /** Every type, with how many drivers hold it — Setup needs the count to
+   *  warn before a removal deletes those records too. */
   listAllTypes() {
-    return prisma.credentialType.findMany({ orderBy: { sortOrder: "asc" } });
+    return prisma.credentialType.findMany({
+      orderBy: { sortOrder: "asc" },
+      include: { _count: { select: { credentials: true } } },
+    });
   },
   createType(data: {
     code: string;
@@ -42,6 +47,22 @@ export const complianceRepo = {
   },
   setTypeActive(code: string, isActive: boolean) {
     return prisma.credentialType.update({ where: { code }, data: { isActive } });
+  },
+
+  /**
+   * Delete a credential type outright, along with every driver's record of
+   * holding it. Destructive and irreversible — Setup offers "Hide" for the
+   * common case of retiring a type while keeping its history.
+   */
+  async deleteType(code: string): Promise<{ name: string; heldBy: number }> {
+    return prisma.$transaction(async (tx) => {
+      const type = await tx.credentialType.findUnique({ where: { code } });
+      if (!type) throw new Error("That credential no longer exists.");
+      const heldBy = await tx.driverCredential.count({ where: { typeCode: code } });
+      await tx.driverCredential.deleteMany({ where: { typeCode: code } });
+      await tx.credentialType.delete({ where: { code } });
+      return { name: type.name, heldBy };
+    });
   },
 
   // ---- driver credentials ---------------------------------------------------

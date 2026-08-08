@@ -89,6 +89,23 @@ export async function updateCredentialTypeAction(formData: FormData): Promise<vo
   refresh();
 }
 
+/** Delete a credential type and every driver's record of holding it. */
+export async function deleteCredentialTypeAction(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code") ?? "").trim();
+  if (!code) return;
+  const { name, heldBy } = await complianceRepo.deleteType(code);
+  await logAction(
+    user,
+    "setup.credentialTypeDelete",
+    "CredentialType",
+    null,
+    `Removed credential ${code} (${name})${heldBy > 0 ? ` and ${heldBy} driver record${heldBy === 1 ? "" : "s"}` : ""}`,
+  );
+  refresh();
+  revalidatePath("/fleet/drivers");
+}
+
 export async function toggleCredentialTypeActive(formData: FormData): Promise<void> {
   const user = await requireManager();
   const code = String(formData.get("code"));
