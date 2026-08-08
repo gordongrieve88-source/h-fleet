@@ -23,7 +23,9 @@ const GROUPS: {
     label: "Fleet",
     links: [
       { href: "/fleet", label: "Fleet board", access: "all", icon: IconTruck },
+      { href: "/fleet/week", label: "Week ahead", access: "all", icon: IconChart },
       { href: "/fleet/leave", label: "Driver leave", access: "edit", icon: IconPlane },
+      { href: "/fleet/compliance", label: "Compliance", access: "edit", icon: IconCheckBadge },
       { href: "/fleet/reports", label: "Fleet reports", access: "insights", icon: IconChart },
       { href: "/fleet/drivers", label: "Drivers", access: "edit", icon: IconPeople },
       { href: "/fleet/trucks", label: "Trucks", access: "edit", icon: IconTruck },

@@ -41,6 +41,7 @@ export function applyMigrations(): void {
 /** Empty every table (children before parents for FK order). */
 export async function wipeData(): Promise<void> {
   await prisma.userDepotScope.deleteMany();
+  await prisma.driverCredential.deleteMany();
   await prisma.truckAssignment.deleteMany();
   await prisma.driverLeave.deleteMany();
   await prisma.driverEntitlement.deleteMany();
@@ -52,6 +53,7 @@ export async function wipeData(): Promise<void> {
   await prisma.fleetRegion.deleteMany();
   await prisma.appUser.deleteMany();
   await prisma.leaveType.deleteMany();
+  await prisma.credentialType.deleteMany();
   await prisma.publicHoliday.deleteMany();
 }
 

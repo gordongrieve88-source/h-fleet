@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireEdit, requireEditForDepot, requireUnrestrictedEdit } from "@/lib/auth";
-import { fleetBoardRepo, fleetRepo } from "@/lib/db/repositories";
+import { fleetBoardRepo, fleetRepo, complianceRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 import { dateFromKey, parseYmdOrNull, fmtDate } from "@/lib/wfm/date";
 import { statusLabel } from "@/lib/wfm/fleet";
@@ -35,6 +35,19 @@ export async function moveDriver(dateKey: string, driverId: number, toTruck: str
   try {
     await requireEditForTruck(toTruck, user);
     const date = dateFromKey(dateKey);
+
+    // Compliance gate: a credential that BLOCKS rostering and is expired on
+    // the board's date refuses the move (the Fleet doctor explains why).
+    const blocked = await complianceRepo.expiredBlocking(driverId, date);
+    if (blocked.length > 0) {
+      const driver = await fleetRepo.getDriver(driverId);
+      const c = blocked[0];
+      return {
+        ok: false,
+        error: `Can't roster ${driver?.name ?? `#${driverId}`}: ${c.type.name} expired ${fmtDate(c.expiresOn!)}.`,
+      };
+    }
+
     const { from, displaced } = await fleetBoardRepo.moveDriver(date, driverId, toTruck, user.id);
 
     const driver = await fleetRepo.getDriver(driverId);

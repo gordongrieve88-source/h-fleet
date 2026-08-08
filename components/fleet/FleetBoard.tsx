@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FleetCatalogVM, TruckAssignmentVM, DriverVM, LeaveTypeVM } from "@/lib/fleet/catalog";
 import { TRUCK_STATUS, availFor } from "@/lib/wfm/fleet";
-import { addDaysKey, isWeekendKey, todayKey } from "@/lib/wfm/date";
+import { addDaysKey, dateFromKey, isWeekendKey, mondayOf, todayKey, ymd } from "@/lib/wfm/date";
 import { Kpi } from "./Kpi";
 import { TruckRow } from "./TruckRow";
 import { DriverChip } from "./DriverChip";
@@ -167,6 +168,13 @@ export function FleetBoard({
             >
               Today
             </button>
+            <Link
+              href={`/fleet/week?w=${ymd(mondayOf(dateFromKey(date)))}`}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              title="Cover planning for this week"
+            >
+              Week
+            </Link>
             {weekend && <span className="ml-1 rounded-full bg-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500">Weekend</span>}
             <span
               className={`ml-1 rounded-full px-2 py-1 text-[11px] font-medium ${

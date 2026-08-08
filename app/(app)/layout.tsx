@@ -38,10 +38,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Command palette entries, filtered by what this role can open.
   const pages: PaletteEntry[] = [
     { label: "Fleet board", hint: "Daily truck board", href: "/fleet" },
+    { label: "Week ahead", hint: "Cover planning, 7 days out", href: "/fleet/week" },
     { label: "Fleet wallboard", hint: "Depot TV — today's trucks", href: "/wallboard/fleet" },
     ...(canEdit
       ? [
           { label: "Driver leave", hint: "Fleet leave planner", href: "/fleet/leave" },
+          { label: "Compliance", hint: "Licences, medicals, inductions", href: "/fleet/compliance" },
           { label: "Drivers", hint: "Fleet master data", href: "/fleet/drivers" },
           { label: "Trucks", hint: "Fleet master data", href: "/fleet/trucks" },
         ]

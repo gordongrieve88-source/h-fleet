@@ -190,6 +190,34 @@ async function main() {
     });
   }
 
+  // ---- Driver credentials -------------------------------------------------
+  // Types are reference data (upserted); per-driver credentials rebuild with
+  // the fleet. Expiries are deterministic off the driver id so the demo
+  // always shows a few expiring/expired rows in the doctor + Compliance page.
+  const credentialTypes = [
+    { code: "HV", name: "Heavy vehicle licence (HC)", severity: "BLOCK", warnDays: 60, sortOrder: 1 },
+    { code: "MED", name: "Commercial driver medical", severity: "WARN", warnDays: 60, sortOrder: 2 },
+    { code: "IND", name: "Site induction", severity: "WARN", warnDays: 30, sortOrder: 3 },
+  ];
+  for (const ct of credentialTypes) {
+    await prisma.credentialType.upsert({ where: { code: ct.code }, create: ct, update: ct });
+  }
+  const allDrivers = await prisma.driver.findMany({ select: { id: true }, orderBy: { id: "asc" } });
+  const credRows: { driverId: number; typeCode: string; reference: string; expiresOn: Date }[] = [];
+  allDrivers.forEach(({ id }, i) => {
+    // Licences: spread over ~3 years ahead; every ~40th driver expiring soon,
+    // one in the whole fleet already expired (i === 17).
+    const hvDays = i === 17 ? -12 : i % 40 === 5 ? 21 : 90 + ((i * 37) % 1000);
+    credRows.push({ driverId: id, typeCode: "HV", reference: `HC-${20000 + id}`, expiresOn: addDays(today, hvDays) });
+    // Medicals: every ~30th expiring inside the warn window, one expired.
+    const medDays = i === 44 ? -30 : i % 30 === 11 ? 40 : 60 + ((i * 53) % 700);
+    credRows.push({ driverId: id, typeCode: "MED", reference: `MED-${7000 + id}`, expiresOn: addDays(today, medDays) });
+    // Inductions: most fine, a handful inside 30 days.
+    const indDays = i % 25 === 7 ? 12 : 45 + ((i * 29) % 500);
+    credRows.push({ driverId: id, typeCode: "IND", reference: `IND-${3000 + id}`, expiresOn: addDays(today, indDays) });
+  });
+  await prisma.driverCredential.createMany({ data: credRows });
+
   // Scope the demo supervisor to the two biggest depots so the per-depot
   // permission model is visible out of the box (deleting depots above
   // cascaded any previous scope rows).

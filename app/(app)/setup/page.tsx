@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isManagerRole } from "@/lib/auth/roles";
-import { referenceRepo } from "@/lib/db/repositories";
+import { referenceRepo, complianceRepo } from "@/lib/db/repositories";
 import { PageHeader, Card } from "@/components/PageHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { StatesPicker } from "@/components/StatesPicker";
@@ -10,6 +10,9 @@ import {
   createLeaveTypeAction,
   updateLeaveTypeAction,
   toggleLeaveTypeActive,
+  createCredentialTypeAction,
+  updateCredentialTypeAction,
+  toggleCredentialTypeActive,
   createHolidayAction,
   deleteHolidayAction,
 } from "./actions";
@@ -22,9 +25,10 @@ export default async function SetupPage() {
   const user = await getCurrentUser();
   if (!isManagerRole(user?.role)) redirect("/fleet");
 
-  const [leaveTypes, holidays] = await Promise.all([
+  const [leaveTypes, holidays, credentialTypes] = await Promise.all([
     referenceRepo.listAllLeaveTypes(),
     referenceRepo.listAllHolidays(),
+    complianceRepo.listAllTypes(),
   ]);
   const todayKey = ymd(todayUTC());
   const upcomingHolidays = holidays.filter((h) => h.date >= todayKey);
@@ -73,6 +77,59 @@ export default async function SetupPage() {
             Add
           </SubmitButton>
         </form>
+      </Card>
+
+      {/* Driver credential types */}
+      <Card title="Driver credential types" count={credentialTypes.length}>
+        <ul className="divide-y divide-slate-50">
+          {credentialTypes.map((ct) => (
+            <li key={ct.code} className={`px-4 py-1.5 ${ct.isActive ? "" : "opacity-50"}`}>
+              <form action={updateCredentialTypeAction} className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="hidden" name="code" value={ct.code} />
+                <span className="w-16 font-semibold text-slate-600">{ct.code}</span>
+                <input name="name" defaultValue={ct.name} className={`${inputCls} min-w-56 flex-1`} />
+                <select name="severity" defaultValue={ct.severity} className={inputCls} title="What an expired credential does">
+                  <option value="WARN">Warn only</option>
+                  <option value="BLOCK">Block rostering</option>
+                </select>
+                <label className="flex items-center gap-1 text-xs text-slate-500">
+                  warn
+                  <input name="warnDays" type="number" defaultValue={ct.warnDays} className={`${inputCls} w-16`} title="Expiring-soon window (days)" />
+                  d ahead
+                </label>
+                <input name="sortOrder" type="number" defaultValue={ct.sortOrder} className={`${inputCls} w-16`} title="Sort order" />
+                <SubmitButton className={saveBtn} savedToast={`${ct.code} saved`}>
+                  Save
+                </SubmitButton>
+              </form>
+              <form action={toggleCredentialTypeActive} className="mt-0.5">
+                <input type="hidden" name="code" value={ct.code} />
+                <input type="hidden" name="active" value={ct.isActive ? "false" : "true"} />
+                <SubmitButton className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline" savedToast={ct.isActive ? `${ct.code} hidden` : `${ct.code} reactivated`}>
+                  {ct.isActive ? "Hide" : "Reactivate"}
+                </SubmitButton>
+              </form>
+            </li>
+          ))}
+        </ul>
+        <form action={createCredentialTypeAction} className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          ＋ Add type
+          <input name="code" placeholder="CODE" className={`${inputCls} w-20 uppercase`} />
+          <input name="name" placeholder="Display name" className={`${inputCls} min-w-56 flex-1`} />
+          <select name="severity" defaultValue="WARN" className={inputCls}>
+            <option value="WARN">Warn only</option>
+            <option value="BLOCK">Block rostering</option>
+          </select>
+          <input name="warnDays" type="number" defaultValue={30} className={`${inputCls} w-16`} title="Expiring-soon window (days)" />
+          <input name="sortOrder" type="number" defaultValue={50} className={`${inputCls} w-16`} />
+          <SubmitButton className={saveBtn} savedToast="Credential type added">
+            Add
+          </SubmitButton>
+        </form>
+        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+          Tracked per driver on the Compliance page. An expired &quot;Block rostering&quot; credential stops the driver being moved
+          onto a truck; everything else flags in the Fleet doctor.
+        </p>
       </Card>
 
       {/* Public holidays */}

@@ -168,6 +168,7 @@ model Driver {
   entitlements  DriverEntitlement[]
   defaultTrucks Truck[]             @relation("TruckDefaultDriver")
   assignments   TruckAssignment[]
+  credentials   DriverCredential[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -249,6 +250,43 @@ model DriverLeave {
 
   @@index([driverId, startDate])
   @@index([status])
+}
+
+/// Credential kinds a driver can hold (HC licence, medical, site induction…)
+/// — editable in Setup like LeaveType. `severity` decides what an EXPIRED
+/// credential does on the board: "BLOCK" refuses to roster the driver,
+/// "WARN" flags them in the Fleet doctor. `warnDays` is the expiring-soon
+/// window per type.
+model CredentialType {
+  code      String  @id
+  name      String
+  severity  String  @default("WARN") // WARN / BLOCK
+  warnDays  Int     @default(30)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  credentials DriverCredential[]
+}
+
+/// One credential a driver holds — a licence, medical or induction, with an
+/// optional reference number and expiry. Renewal = update the expiry (one
+/// row per driver per type). Null expiresOn = never expires.
+model DriverCredential {
+  id        Int       @id @default(autoincrement())
+  driverId  Int
+  typeCode  String
+  reference String?
+  expiresOn DateTime? // UTC midnight; treated as a date
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  driver Driver         @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  type   CredentialType @relation(fields: [typeCode], references: [code])
+
+  @@unique([driverId, typeCode])
+  @@index([expiresOn])
 }
 
 /// Annual entitlement per driver/type/year — drives the AL balance shown in

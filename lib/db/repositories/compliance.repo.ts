@@ -1,0 +1,118 @@
+import { prisma } from "../client";
+import { isOnRoad } from "@/lib/wfm/fleet";
+import { ymd, addDaysUTC } from "@/lib/wfm/date";
+
+/**
+ * Rostering compliance data — driver credentials (licences, medicals,
+ * inductions) and the worked-day history that feeds the fatigue flags.
+ */
+export const complianceRepo = {
+  // ---- credential types (Setup) --------------------------------------------
+  listTypes() {
+    return prisma.credentialType.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
+  },
+  listAllTypes() {
+    return prisma.credentialType.findMany({ orderBy: { sortOrder: "asc" } });
+  },
+  createType(data: { code: string; name: string; severity: string; warnDays: number; sortOrder: number }) {
+    return prisma.credentialType.create({ data });
+  },
+  updateType(code: string, data: { name: string; severity: string; warnDays: number; sortOrder: number }) {
+    return prisma.credentialType.update({ where: { code }, data });
+  },
+  setTypeActive(code: string, isActive: boolean) {
+    return prisma.credentialType.update({ where: { code }, data: { isActive } });
+  },
+
+  // ---- driver credentials ---------------------------------------------------
+  listAllCredentials() {
+    return prisma.driverCredential.findMany({
+      include: { driver: { include: { depot: true } }, type: true },
+      orderBy: [{ driver: { name: "asc" } }, { typeCode: "asc" }],
+    });
+  },
+  /** Credentials for a set of drivers (doctor checks) — active types only. */
+  forDrivers(driverIds: number[]) {
+    if (driverIds.length === 0) return Promise.resolve([]);
+    return prisma.driverCredential.findMany({
+      where: { driverId: { in: driverIds }, type: { isActive: true } },
+      include: { type: true },
+    });
+  },
+  getCredential(id: number) {
+    return prisma.driverCredential.findUnique({ where: { id }, include: { driver: true, type: true } });
+  },
+  /** One row per driver/type — renewals update the expiry in place. */
+  upsertCredential(input: { driverId: number; typeCode: string; reference: string | null; expiresOn: Date | null; notes: string | null }) {
+    const data = { reference: input.reference, expiresOn: input.expiresOn, notes: input.notes };
+    return prisma.driverCredential.upsert({
+      where: { driverId_typeCode: { driverId: input.driverId, typeCode: input.typeCode } },
+      create: { driverId: input.driverId, typeCode: input.typeCode, ...data },
+      update: data,
+      include: { driver: true, type: true },
+    });
+  },
+  deleteCredential(id: number) {
+    return prisma.driverCredential.delete({ where: { id }, include: { driver: true, type: true } });
+  },
+
+  /** Expired credentials whose type BLOCKS rostering — the move-time gate. */
+  expiredBlocking(driverId: number, today: Date) {
+    return prisma.driverCredential.findMany({
+      where: {
+        driverId,
+        expiresOn: { lt: today },
+        type: { isActive: true, severity: "BLOCK" },
+      },
+      include: { type: true },
+    });
+  },
+
+  /**
+   * Per-driver sets of worked day-keys in [start, end] — the fatigue-run
+   * input. A captured day counts a driver if they're on an on-road truck; an
+   * uncaptured day rolls forward (default drivers of active trucks, minus
+   * approved leave) exactly like the board itself — except Sundays, which
+   * the fleet doesn't operate (same rule as the approvals coverage maths).
+   * A CAPTURED Sunday still counts: if someone really worked it, it's real.
+   */
+  async workedDaySets(start: Date, end: Date): Promise<Map<number, Set<string>>> {
+    const [saved, trucks, leave] = await Promise.all([
+      prisma.truckAssignment.findMany({
+        where: { date: { gte: start, lte: end } },
+        select: { date: true, driverId: true, status: true },
+      }),
+      prisma.truck.findMany({ where: { isActive: true, defaultDriverId: { not: null } }, select: { defaultDriverId: true } }),
+      prisma.driverLeave.findMany({
+        where: { status: "APPROVED", startDate: { lte: end }, endDate: { gte: start } },
+        select: { driverId: true, startDate: true, endDate: true },
+      }),
+    ]);
+
+    const capturedDays = new Set(saved.map((r) => ymd(r.date)));
+    const defaultDrivers = [...new Set(trucks.map((t) => t.defaultDriverId as number))];
+
+    const onLeave = (driverId: number, day: Date) =>
+      leave.some((l) => l.driverId === driverId && l.startDate <= day && l.endDate >= day);
+
+    const out = new Map<number, Set<string>>();
+    const add = (driverId: number, key: string) => {
+      let set = out.get(driverId);
+      if (!set) out.set(driverId, (set = new Set()));
+      set.add(key);
+    };
+
+    for (const r of saved) {
+      if (r.driverId != null && isOnRoad(r.status)) add(r.driverId, ymd(r.date));
+    }
+    for (let day = new Date(start); day <= end; day = addDaysUTC(day, 1)) {
+      const key = ymd(day);
+      if (capturedDays.has(key)) continue;
+      if (day.getUTCDay() === 0) continue; // no Sunday operations
+      for (const driverId of defaultDrivers) {
+        if (!onLeave(driverId, day)) add(driverId, key);
+      }
+    }
+    return out;
+  },
+};
