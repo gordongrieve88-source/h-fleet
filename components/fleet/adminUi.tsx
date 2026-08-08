@@ -22,7 +22,18 @@ export function useAction() {
   return { run, pending, error, setError };
 }
 
-export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Modal({
+  title,
+  onClose,
+  children,
+  wide,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  /** Roomier dialog for forms with a side panel (e.g. driver qualifications). */
+  wide?: boolean;
+}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -31,7 +42,10 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   if (typeof document === "undefined") return null;
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 pt-20" onClick={onClose}>
-      <div className="animate-pop-in w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-pop" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`animate-pop-in w-full ${wide ? "max-w-3xl" : "max-w-md"} rounded-xl border border-slate-200 bg-white shadow-pop`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
           <h3 className="font-heading text-sm font-semibold text-brand-deep">{title}</h3>
           <button onClick={onClose} className="px-1 text-slate-400 hover:text-slate-700">

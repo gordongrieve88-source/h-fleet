@@ -29,8 +29,10 @@ export default async function FleetCompliancePage() {
   const typeVMs: CredentialTypeVM[] = types.map((t) => ({
     code: t.code,
     name: t.name,
+    kind: t.kind as "EXPIRY" | "TICKBOX",
     severity: t.severity as "WARN" | "BLOCK",
     warnDays: t.warnDays,
+    requiredForTruckType: t.requiredForTruckType,
   }));
 
   const byDriver = new Map<number, typeof credentials>();

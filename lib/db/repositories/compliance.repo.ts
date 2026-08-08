@@ -14,10 +14,30 @@ export const complianceRepo = {
   listAllTypes() {
     return prisma.credentialType.findMany({ orderBy: { sortOrder: "asc" } });
   },
-  createType(data: { code: string; name: string; severity: string; warnDays: number; sortOrder: number }) {
+  createType(data: {
+    code: string;
+    name: string;
+    kind: string;
+    category: string;
+    severity: string;
+    warnDays: number;
+    requiredForTruckType: string | null;
+    sortOrder: number;
+  }) {
     return prisma.credentialType.create({ data });
   },
-  updateType(code: string, data: { name: string; severity: string; warnDays: number; sortOrder: number }) {
+  updateType(
+    code: string,
+    data: {
+      name: string;
+      kind: string;
+      category: string;
+      severity: string;
+      warnDays: number;
+      requiredForTruckType: string | null;
+      sortOrder: number;
+    },
+  ) {
     return prisma.credentialType.update({ where: { code }, data });
   },
   setTypeActive(code: string, isActive: boolean) {
@@ -66,6 +86,66 @@ export const complianceRepo = {
       },
       include: { type: true },
     });
+  },
+
+  /**
+   * Competencies this truck type demands that the driver doesn't hold — the
+   * second move-time gate ("can they drive this kind of truck?").
+   */
+  async missingForTruckType(driverId: number, truckType: string) {
+    const required = await prisma.credentialType.findMany({
+      where: { isActive: true, requiredForTruckType: truckType },
+    });
+    if (required.length === 0) return [];
+    const held = new Set(
+      (
+        await prisma.driverCredential.findMany({
+          where: { driverId, typeCode: { in: required.map((r) => r.code) } },
+          select: { typeCode: true },
+        })
+      ).map((c) => c.typeCode),
+    );
+    return required.filter((r) => !held.has(r.code));
+  },
+
+  /** Everything a driver holds, plus every active type — the profile view. */
+  async profileFor(driverId: number) {
+    const [types, held] = await Promise.all([
+      prisma.credentialType.findMany({ where: { isActive: true }, orderBy: [{ category: "asc" }, { sortOrder: "asc" }] }),
+      prisma.driverCredential.findMany({ where: { driverId }, select: { typeCode: true, expiresOn: true, reference: true } }),
+    ]);
+    const heldByCode = new Map(held.map((h) => [h.typeCode, h]));
+    return types.map((t) => ({
+      code: t.code,
+      name: t.name,
+      kind: t.kind as "EXPIRY" | "TICKBOX",
+      category: t.category,
+      severity: t.severity,
+      warnDays: t.warnDays,
+      requiredForTruckType: t.requiredForTruckType,
+      held: heldByCode.has(t.code),
+      expiresOn: heldByCode.get(t.code)?.expiresOn ?? null,
+      reference: heldByCode.get(t.code)?.reference ?? null,
+    }));
+  },
+
+  /** Grant or revoke a tick-box competency. */
+  async setTickbox(driverId: number, typeCode: string, held: boolean) {
+    if (held) {
+      await prisma.driverCredential.upsert({
+        where: { driverId_typeCode: { driverId, typeCode } },
+        create: { driverId, typeCode },
+        update: {},
+      });
+    } else {
+      await prisma.driverCredential.deleteMany({ where: { driverId, typeCode } });
+    }
+  },
+
+  /** Distinct truck types in the fleet — the options for requiredForTruckType. */
+  async truckTypes(): Promise<string[]> {
+    const rows = await prisma.truck.findMany({ distinct: ["type"], select: { type: true }, orderBy: { type: "asc" } });
+    return rows.map((r) => r.type).filter(Boolean);
   },
 
   /**

@@ -8,8 +8,10 @@ import { saveCredential, removeCredential } from "@/app/(app)/fleet/compliance/a
 export interface CredentialTypeVM {
   code: string;
   name: string;
+  kind: "EXPIRY" | "TICKBOX";
   severity: "WARN" | "BLOCK";
   warnDays: number;
+  requiredForTruckType: string | null;
 }
 
 export interface CredentialCellVM {
@@ -45,10 +47,15 @@ function chipLabel(cell: CredentialCellVM | undefined): string {
   return cell.expires;
 }
 
-/** A driver has an issue if anything is expired/expiring, or a BLOCK type is missing. */
+/**
+ * A driver has an issue if a dated ticket is expired/expiring or missing when
+ * it blocks, or they lack a competency a truck type requires. Optional
+ * competencies (mixes, site inductions) are informational, not issues.
+ */
 function hasIssue(row: ComplianceRow, types: CredentialTypeVM[]): boolean {
   return types.some((t) => {
     const cell = row.cells[t.code];
+    if (t.kind === "TICKBOX") return t.requiredForTruckType !== null && !cell;
     if (!cell) return t.severity === "BLOCK";
     return cell.state === "expired" || cell.state === "expiring";
   });
@@ -206,6 +213,27 @@ export function ComplianceAdmin({ types, rows }: { types: CredentialTypeVM[]; ro
                 {types.map((t) => {
                   const cell = r.cells[t.code];
                   const state = cell?.state ?? "none";
+                  if (t.kind === "TICKBOX") {
+                    const missingRequired = t.requiredForTruckType !== null && !cell;
+                    return (
+                      <td key={t.code} className="px-3 py-1.5">
+                        <span
+                          title={
+                            cell
+                              ? `Signed off for ${t.name}`
+                              : missingRequired
+                                ? `Not signed off — can't be rostered on a ${t.requiredForTruckType}`
+                                : `Not signed off for ${t.name}`
+                          }
+                          className={`inline-block text-sm font-bold ${
+                            cell ? "text-brand-mid" : missingRequired ? "text-rose-600" : "text-slate-300"
+                          }`}
+                        >
+                          {cell ? "✓" : missingRequired ? "✕" : "–"}
+                        </span>
+                      </td>
+                    );
+                  }
                   return (
                     <td key={t.code} className="px-3 py-1.5">
                       <button

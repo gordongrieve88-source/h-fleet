@@ -212,10 +212,22 @@ async function main() {
   // Types are reference data (upserted); per-driver credentials rebuild with
   // the fleet. Expiries are deterministic off the driver id so the demo
   // always shows a few expiring/expired rows in the doctor + Compliance page.
+  const T = "Tickets & medicals";
   const credentialTypes = [
-    { code: "HV", name: "Heavy vehicle licence (HC)", severity: "BLOCK", warnDays: 60, sortOrder: 1 },
-    { code: "MED", name: "Commercial driver medical", severity: "WARN", warnDays: 60, sortOrder: 2 },
-    { code: "IND", name: "Site induction", severity: "WARN", warnDays: 30, sortOrder: 3 },
+    // Dated tickets — maintained with an expiry on the Compliance screen.
+    { code: "HV", name: "Heavy vehicle licence (HC)", kind: "EXPIRY", category: T, severity: "BLOCK", warnDays: 60, requiredForTruckType: null, sortOrder: 1 },
+    { code: "MED", name: "Commercial driver medical", kind: "EXPIRY", category: T, severity: "WARN", warnDays: 60, requiredForTruckType: null, sortOrder: 2 },
+    { code: "IND", name: "General site induction", kind: "EXPIRY", category: T, severity: "WARN", warnDays: 30, requiredForTruckType: null, sortOrder: 3 },
+    // Truck sign-offs — the enforceable ones.
+    { code: "AGI", name: "Agitator sign-off", kind: "TICKBOX", category: "Truck types", severity: "WARN", warnDays: 0, requiredForTruckType: "Agitator", sortOrder: 10 },
+    // Mix competencies.
+    { code: "MXHS", name: "High-strength mixes", kind: "TICKBOX", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 20 },
+    { code: "MXCOL", name: "Coloured / architectural", kind: "TICKBOX", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 21 },
+    { code: "MXSHOT", name: "Shotcrete", kind: "TICKBOX", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 22 },
+    // Job-site inductions — informational: the board knows which plant a
+    // truck works from, not which customer site it's sent to.
+    { code: "STA", name: "Site A — major project", kind: "TICKBOX", category: "Site inductions", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 30 },
+    { code: "STB", name: "Site B — rail corridor", kind: "TICKBOX", category: "Site inductions", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 31 },
   ];
   for (const ct of credentialTypes) {
     await prisma.credentialType.upsert({ where: { code: ct.code }, create: ct, update: ct });
@@ -235,6 +247,21 @@ async function main() {
     credRows.push({ driverId: id, typeCode: "IND", reference: `IND-${3000 + id}`, expiresOn: addDays(today, indDays) });
   });
   await prisma.driverCredential.createMany({ data: credRows });
+
+  // Competencies (tick boxes — no expiry). Deterministic spread so the demo
+  // shows a realistic mix of who is and isn't signed off. Nearly everyone is
+  // agitator-signed-off; a few deliberately aren't, so the truck-type gate
+  // has something to catch.
+  const tickRows: { driverId: number; typeCode: string }[] = [];
+  allDrivers.forEach(({ id }, i) => {
+    if (i % 23 !== 4) tickRows.push({ driverId: id, typeCode: "AGI" });
+    if (i % 3 === 0) tickRows.push({ driverId: id, typeCode: "MXHS" });
+    if (i % 7 === 2) tickRows.push({ driverId: id, typeCode: "MXCOL" });
+    if (i % 11 === 5) tickRows.push({ driverId: id, typeCode: "MXSHOT" });
+    if (i % 5 === 1) tickRows.push({ driverId: id, typeCode: "STA" });
+    if (i % 9 === 3) tickRows.push({ driverId: id, typeCode: "STB" });
+  });
+  await prisma.driverCredential.createMany({ data: tickRows });
 
   // Scope the demo supervisor to the two biggest depots so the per-depot
   // permission model is visible out of the box (deleting depots above

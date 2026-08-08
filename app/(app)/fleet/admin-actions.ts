@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireEdit, requireEditForDepot, requireManager } from "@/lib/auth";
-import { fleetRepo, selfServiceRepo } from "@/lib/db/repositories";
+import { fleetRepo, selfServiceRepo, complianceRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 
 export type ActionResult = { ok: boolean; error?: string };
@@ -65,6 +65,38 @@ export async function saveDriver(input: {
       );
     }
     refresh();
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** The driver's qualifications for their profile: every active type, and
+ *  whether they hold it. */
+export async function loadDriverQualifications(driverId: number) {
+  await requireEdit();
+  return complianceRepo.profileFor(driverId);
+}
+
+/** Tick or untick one competency on a driver's profile. */
+export async function setDriverCompetency(driverId: number, typeCode: string, held: boolean): Promise<ActionResult> {
+  const user = await requireEdit();
+  try {
+    const driver = await fleetRepo.getDriver(driverId);
+    if (!driver) return { ok: false, error: "Unknown driver." };
+    await requireEditForDepot(driver.depotId, user);
+    await complianceRepo.setTickbox(driverId, typeCode, held);
+    const type = (await complianceRepo.listTypes()).find((t) => t.code === typeCode);
+    await logAction(
+      user,
+      "fleet.driver.competency",
+      "DriverCredential",
+      driverId,
+      `${held ? "Signed off" : "Removed sign-off for"} ${driver.name} — ${type?.name ?? typeCode}`,
+    );
+    revalidatePath("/fleet/drivers");
+    revalidatePath("/fleet/compliance");
+    revalidatePath("/fleet");
     return { ok: true };
   } catch (e) {
     return fail(e);

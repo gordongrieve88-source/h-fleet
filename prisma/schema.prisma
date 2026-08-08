@@ -315,18 +315,33 @@ model DriverLeave {
   @@index([status])
 }
 
-/// Credential kinds a driver can hold (HC licence, medical, site induction…)
-/// — editable in Setup like LeaveType. `severity` decides what an EXPIRED
-/// credential does on the board: "BLOCK" refuses to roster the driver,
-/// "WARN" flags them in the Fleet doctor. `warnDays` is the expiring-soon
-/// window per type.
+/// Everything a driver can hold — editable in Setup like LeaveType.
+///
+/// Two kinds, because the fleet tracks two different things:
+///   EXPIRY  — a dated ticket (HC licence, medical, site induction that
+///             lapses). `severity` decides what an EXPIRED one does:
+///             "BLOCK" refuses to roster the driver, "WARN" only flags.
+///             `warnDays` is the expiring-soon window.
+///   TICKBOX — a competency they either hold or don't (trained on a mix,
+///             signed off on a truck type, inducted to a site). No date.
+///
+/// `category` groups them on the driver's profile ("Truck types", "Mixes",
+/// "Site inductions") and is free data — a new grouping is just a new label.
+///
+/// `requiredForTruckType` is the enforceable one: set it to a Truck.type and
+/// a driver who doesn't hold this credential cannot be rostered onto a truck
+/// of that type. Site inductions stay informational because the board knows
+/// which plant a truck works from, not which customer job it's sent to.
 model CredentialType {
-  code      String  @id
-  name      String
-  severity  String  @default("WARN") // WARN / BLOCK
-  warnDays  Int     @default(30)
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
+  code                 String  @id
+  name                 String
+  kind                 String  @default("EXPIRY") // EXPIRY / TICKBOX
+  category             String  @default("Tickets & medicals")
+  severity             String  @default("WARN") // WARN / BLOCK
+  warnDays             Int     @default(30)
+  requiredForTruckType String?
+  sortOrder            Int     @default(0)
+  isActive             Boolean @default(true)
 
   credentials DriverCredential[]
 }

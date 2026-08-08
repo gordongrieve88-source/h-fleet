@@ -48,34 +48,44 @@ export async function toggleLeaveTypeActive(formData: FormData): Promise<void> {
   refresh();
 }
 
+/** Shared shape for both credential-type forms. */
+function credentialTypeFields(formData: FormData) {
+  const kind = String(formData.get("kind")) === "TICKBOX" ? "TICKBOX" : "EXPIRY";
+  const truckType = String(formData.get("requiredForTruckType") ?? "").trim();
+  return {
+    name: String(formData.get("name") ?? "").trim(),
+    kind,
+    category: String(formData.get("category") ?? "").trim() || "Tickets & medicals",
+    severity: String(formData.get("severity")) === "BLOCK" ? "BLOCK" : "WARN",
+    warnDays: Math.max(0, Number(formData.get("warnDays") ?? 30) || 30),
+    // Only a tick-box competency can gate a truck type.
+    requiredForTruckType: kind === "TICKBOX" && truckType ? truckType : null,
+    sortOrder: Number(formData.get("sortOrder") ?? 50) || 50,
+  };
+}
+
 export async function createCredentialTypeAction(formData: FormData): Promise<void> {
   const user = await requireManager();
   const code = String(formData.get("code") ?? "").trim().toUpperCase();
-  const name = String(formData.get("name") ?? "").trim();
-  if (!code || !name) return;
-  const severity = String(formData.get("severity")) === "BLOCK" ? "BLOCK" : "WARN";
-  await complianceRepo.createType({
-    code,
-    name,
-    severity,
-    warnDays: Math.max(0, Number(formData.get("warnDays") ?? 30) || 30),
-    sortOrder: Number(formData.get("sortOrder") ?? 50) || 50,
-  });
-  await logAction(user, "setup.credentialTypeCreate", "CredentialType", null, `Added credential type ${code} (${name}, ${severity})`);
+  const fields = credentialTypeFields(formData);
+  if (!code || !fields.name) return;
+  await complianceRepo.createType({ code, ...fields });
+  await logAction(
+    user,
+    "setup.credentialTypeCreate",
+    "CredentialType",
+    null,
+    `Added ${fields.kind === "TICKBOX" ? "competency" : "credential type"} ${code} (${fields.name}, ${fields.category})`,
+  );
   refresh();
 }
 
 export async function updateCredentialTypeAction(formData: FormData): Promise<void> {
   const user = await requireManager();
   const code = String(formData.get("code"));
-  const severity = String(formData.get("severity")) === "BLOCK" ? "BLOCK" : "WARN";
-  await complianceRepo.updateType(code, {
-    name: String(formData.get("name") ?? "").trim(),
-    severity,
-    warnDays: Math.max(0, Number(formData.get("warnDays") ?? 30) || 30),
-    sortOrder: Number(formData.get("sortOrder") ?? 50) || 50,
-  });
-  await logAction(user, "setup.credentialTypeUpdate", "CredentialType", null, `Updated credential type ${code} (${severity})`);
+  const fields = credentialTypeFields(formData);
+  await complianceRepo.updateType(code, fields);
+  await logAction(user, "setup.credentialTypeUpdate", "CredentialType", null, `Updated credential type ${code}`);
   refresh();
 }
 

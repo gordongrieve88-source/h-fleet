@@ -20,10 +20,11 @@ function badDate(): ActionResult {
 }
 
 /** Edits to a truck's board row are scoped by the truck's home depot. */
-async function requireEditForTruck(truckId: string, user: AppUser): Promise<void> {
+async function requireEditForTruck(truckId: string, user: AppUser) {
   const truck = await fleetRepo.getTruck(truckId);
   if (!truck) throw new Error("Unknown truck.");
   await requireEditForDepot(truck.depotId, user);
+  return truck;
 }
 
 /** Move/swap a driver onto a truck. The saved day decides the real source
@@ -33,11 +34,11 @@ export async function moveDriver(dateKey: string, driverId: number, toTruck: str
   const user = await requireEdit();
   if (!parseYmdOrNull(dateKey)) return badDate();
   try {
-    await requireEditForTruck(toTruck, user);
+    const truck = await requireEditForTruck(toTruck, user);
     const date = dateFromKey(dateKey);
 
-    // Compliance gate: a credential that BLOCKS rostering and is expired on
-    // the board's date refuses the move (the Fleet doctor explains why).
+    // Gate 1 — a credential that BLOCKS rostering and is expired on the
+    // board's date refuses the move (the Fleet doctor explains why).
     const blocked = await complianceRepo.expiredBlocking(driverId, date);
     if (blocked.length > 0) {
       const driver = await fleetRepo.getDriver(driverId);
@@ -45,6 +46,18 @@ export async function moveDriver(dateKey: string, driverId: number, toTruck: str
       return {
         ok: false,
         error: `Can't roster ${driver?.name ?? `#${driverId}`}: ${c.type.name} expired ${fmtDate(c.expiresOn!)}.`,
+      };
+    }
+
+    // Gate 2 — can they drive this kind of truck? A competency marked as
+    // required for the truck's type must be held.
+    const missing = await complianceRepo.missingForTruckType(driverId, truck.type);
+    if (missing.length > 0) {
+      const driver = await fleetRepo.getDriver(driverId);
+      const article = /^[aeiou]/i.test(truck.type) ? "an" : "a";
+      return {
+        ok: false,
+        error: `Can't roster ${driver?.name ?? `#${driverId}`} on ${article} ${truck.type}: not signed off for ${missing.map((m) => m.name).join(", ")}.`,
       };
     }
 
