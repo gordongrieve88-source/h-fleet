@@ -94,6 +94,85 @@ export function mean(values: number[]): number {
 }
 
 // ---------------------------------------------------------------------------
+//  Start-time variance — rostered plan vs telematics actual
+// ---------------------------------------------------------------------------
+
+/** Minutes between a rostered "HH:MM" and an actual one. Positive = late. */
+export function startVarianceMinutes(rostered: string | null, actual: string | null): number | null {
+  const mins = (s: string | null) => {
+    if (!s) return null;
+    const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+    if (!m) return null;
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    return h > 23 || min > 59 ? null : h * 60 + min;
+  };
+  const r = mins(rostered);
+  const a = mins(actual);
+  return r === null || a === null ? null : a - r;
+}
+
+export interface PunctualityFact {
+  truckId: string;
+  rostered: string | null;
+  actual: string | null;
+}
+
+export interface Punctuality {
+  /** Rows where both a rostered and an actual time exist. */
+  compared: number;
+  onTime: number;
+  late: number;
+  early: number;
+  onTimePct: number;
+  avgVarianceMinutes: number;
+  /** Trucks that most often start late, worst average first. */
+  worst: { truck: string; late: number; compared: number; avgLateMinutes: number }[];
+}
+
+/** On-time performance. `graceMinutes` is how late still counts as on time. */
+export function punctuality(facts: PunctualityFact[], graceMinutes = 5): Punctuality {
+  const variances: number[] = [];
+  const byTruck = new Map<string, { late: number; compared: number; lateTotal: number }>();
+  let onTime = 0;
+  let late = 0;
+  let early = 0;
+
+  for (const f of facts) {
+    const v = startVarianceMinutes(f.rostered, f.actual);
+    if (v === null) continue;
+    variances.push(v);
+    const t = byTruck.get(f.truckId) ?? { late: 0, compared: 0, lateTotal: 0 };
+    t.compared++;
+    if (v > graceMinutes) {
+      late++;
+      t.late++;
+      t.lateTotal += v;
+    } else if (v < -graceMinutes) early++;
+    else onTime++;
+    byTruck.set(f.truckId, t);
+  }
+
+  return {
+    compared: variances.length,
+    onTime,
+    late,
+    early,
+    onTimePct: variances.length ? onTime / variances.length : 0,
+    avgVarianceMinutes: Number(mean(variances).toFixed(1)),
+    worst: [...byTruck.entries()]
+      .filter(([, t]) => t.late > 0)
+      .map(([truck, t]) => ({
+        truck,
+        late: t.late,
+        compared: t.compared,
+        avgLateMinutes: Number((t.lateTotal / t.late).toFixed(1)),
+      }))
+      .sort((a, b) => b.late - a.late || b.avgLateMinutes - a.avgLateMinutes || a.truck.localeCompare(b.truck)),
+  };
+}
+
+// ---------------------------------------------------------------------------
 //  Planned vs actual — how much does the day change after it's planned?
 // ---------------------------------------------------------------------------
 

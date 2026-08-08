@@ -282,6 +282,14 @@ export const fleetBoardRepo = {
     });
   },
 
+  /** Rostered start times in a range — the plan side of punctuality. */
+  startTimesInRange(start: Date, end: Date) {
+    return prisma.truckAssignment.findMany({
+      where: { date: { gte: start, lte: end }, time: { not: null } },
+      select: { date: true, truckId: true, time: true },
+    });
+  },
+
   /** All saved assignment rows in a range — the raw material for reports. */
   assignmentsInRange(start: Date, end: Date) {
     return prisma.truckAssignment.findMany({

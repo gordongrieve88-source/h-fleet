@@ -6,3 +6,4 @@ export { driverLeaveRepo } from "./driver-leave.repo";
 export { complianceRepo } from "./compliance.repo";
 export { selfServiceRepo } from "./self-service.repo";
 export { timesheetRepo } from "./timesheet.repo";
+export { integrationRepo } from "./integration.repo";

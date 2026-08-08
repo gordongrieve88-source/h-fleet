@@ -44,7 +44,10 @@ const GROUPS: {
   },
   {
     label: "Admin",
-    links: [{ href: "/setup", label: "Setup", access: "admin", icon: IconSettings }],
+    links: [
+      { href: "/integrations", label: "Integrations", access: "admin", icon: IconHistory },
+      { href: "/setup", label: "Setup", access: "admin", icon: IconSettings },
+    ],
   },
 ];
 

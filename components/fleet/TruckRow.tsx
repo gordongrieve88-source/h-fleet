@@ -3,7 +3,27 @@
 import { useState } from "react";
 import type { TruckAssignmentVM, DriverVM } from "@/lib/fleet/catalog";
 import { TRUCK_STATUS, statusKind } from "@/lib/wfm/fleet";
+import { startVarianceMinutes } from "@/lib/wfm/analytics";
 import { DriverChip } from "./DriverChip";
+
+/** Observed departure, shown against the rostered time when both exist. */
+function ActualStart({ rostered, actual }: { rostered: string | null; actual: string }) {
+  const variance = startVarianceMinutes(rostered, actual);
+  const late = variance !== null && variance > 5;
+  return (
+    <span
+      className={`block text-[10px] tabular-nums ${late ? "font-semibold text-amber-600" : "text-slate-400"}`}
+      title={
+        variance === null
+          ? `Actual departure ${actual}`
+          : `Actual ${actual} · ${variance === 0 ? "on time" : `${variance > 0 ? "+" : ""}${variance} min`}`
+      }
+    >
+      ▸{actual}
+      {variance !== null && variance > 5 && <span className="ml-0.5">+{variance}</span>}
+    </span>
+  );
+}
 
 const DOT = { on: "bg-brand-mid", warn: "bg-amber-500", off: "bg-rose-500" } as const;
 const SELECT_TEXT = { on: "text-brand-mid", warn: "text-amber-600", off: "text-rose-600" } as const;
@@ -27,6 +47,7 @@ export function TruckRow({
   pickedDriver,
   placeActive,
   onPlace,
+  actualStart,
 }: {
   row: TruckAssignmentVM;
   /** Plant the truck is lent to today (from the allocation import), or null at home. */
@@ -48,6 +69,8 @@ export function TruckRow({
   /** A driver is picked up somewhere — tapping this row places them here. */
   placeActive: boolean;
   onPlace: () => void;
+  /** Observed departure from telematics, "HH:MM" — null when not fed. */
+  actualStart: string | null;
 }) {
   const [over, setOver] = useState(false);
   const kind = statusKind(row.status);
@@ -114,9 +137,13 @@ export function TruckRow({
         )}
       </div>
 
-      {/* Start time — set by the Syncrotess import (blank until one runs). */}
-      <span className="w-10 text-right text-[10.5px] tabular-nums text-slate-400" title={row.time ? `Start ${row.time}` : ""}>
-        {row.time || ""}
+      {/* Rostered start (Syncrotess import) with the telematics actual under
+          it when we have one — late departures in amber. */}
+      <span className="w-14 text-right leading-tight">
+        <span className="block text-[10.5px] tabular-nums text-slate-400" title={row.time ? `Rostered ${row.time}` : ""}>
+          {row.time || ""}
+        </span>
+        {actualStart && <ActualStart rostered={row.time} actual={actualStart} />}
       </span>
 
       {canEdit ? (

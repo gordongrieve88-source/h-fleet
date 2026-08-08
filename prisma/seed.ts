@@ -311,16 +311,22 @@ async function main() {
     if (d.getTime() === fleetSeedDate.getTime()) continue; // already captured
     historyDates.push(d);
   }
+  // Rostered start times, staggered 05:30–07:15 the way the Syncrotess sheet
+  // does, so punctuality has a plan to compare telematics actuals against.
+  const startTimeFor = (index: number) => {
+    const minutes = 5 * 60 + 30 + ((index * 7) % 105);
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  };
   for (const date of historyDates) {
     await prisma.truckAssignment.createMany({
-      data: allFleetTrucks.map((t) => {
+      data: allFleetTrucks.map((t, i) => {
         const r = rng();
         let status = "ON";
         let driverId = t.defaultDriverId;
         if (r < 0.04) { status = "OFF-BD"; driverId = null; } // breakdown
         else if (r < 0.08) { status = "OFF-ND"; driverId = null; } // driver not in
         else if (r < 0.1) { status = "ON-FTO"; }
-        return { date, truckId: t.id, status, driverId };
+        return { date, truckId: t.id, status, driverId, time: status.startsWith("ON") ? startTimeFor(i) : null };
       }),
     });
   }

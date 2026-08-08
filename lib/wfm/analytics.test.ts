@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { availabilityByDay, mean, plannedVsActual, truckReliability, type AssignmentFact } from "./analytics";
+import {
+  availabilityByDay,
+  mean,
+  plannedVsActual,
+  punctuality,
+  startVarianceMinutes,
+  truckReliability,
+  type AssignmentFact,
+} from "./analytics";
 import { dateFromKey } from "./date";
 
 const d1 = dateFromKey("2026-08-03");
@@ -71,6 +79,65 @@ describe("mean", () => {
   it("averages, and treats empty as zero", () => {
     expect(mean([1, 2, 3])).toBe(2);
     expect(mean([])).toBe(0);
+  });
+});
+
+describe("startVarianceMinutes", () => {
+  it("is positive when the truck left late, negative when early", () => {
+    expect(startVarianceMinutes("06:00", "06:12")).toBe(12);
+    expect(startVarianceMinutes("06:00", "05:52")).toBe(-8);
+    expect(startVarianceMinutes("06:00", "06:00")).toBe(0);
+  });
+
+  it("crosses the hour correctly", () => {
+    expect(startVarianceMinutes("05:55", "06:10")).toBe(15);
+  });
+
+  it("is null when either side is missing or malformed", () => {
+    expect(startVarianceMinutes(null, "06:00")).toBeNull();
+    expect(startVarianceMinutes("06:00", null)).toBeNull();
+    expect(startVarianceMinutes("", "06:00")).toBeNull();
+    expect(startVarianceMinutes("6am", "06:00")).toBeNull();
+    expect(startVarianceMinutes("25:00", "06:00")).toBeNull();
+    expect(startVarianceMinutes("06:99", "06:00")).toBeNull();
+  });
+});
+
+describe("punctuality", () => {
+  const facts = [
+    { truckId: "T1", rostered: "06:00", actual: "06:03" }, // on time (grace 5)
+    { truckId: "T1", rostered: "06:00", actual: "06:30" }, // late 30
+    { truckId: "T2", rostered: "06:00", actual: "05:50" }, // early
+    { truckId: "T3", rostered: "06:00", actual: null }, // no actual -> ignored
+    { truckId: "T4", rostered: null, actual: "06:10" }, // no plan -> ignored
+  ];
+
+  it("only compares rows that have both sides", () => {
+    expect(punctuality(facts).compared).toBe(3);
+  });
+
+  it("classifies on time, late and early against the grace window", () => {
+    const p = punctuality(facts);
+    expect(p).toMatchObject({ onTime: 1, late: 1, early: 1 });
+    expect(p.onTimePct).toBeCloseTo(1 / 3);
+  });
+
+  it("averages the signed variance", () => {
+    // +3, +30, -10 -> 23/3
+    expect(punctuality(facts).avgVarianceMinutes).toBeCloseTo(7.7, 1);
+  });
+
+  it("ranks repeat offenders with their average lateness", () => {
+    const p = punctuality(facts);
+    expect(p.worst).toEqual([{ truck: "T1", late: 1, compared: 2, avgLateMinutes: 30 }]);
+  });
+
+  it("a tighter grace window reclassifies borderline departures", () => {
+    expect(punctuality(facts, 1).onTime).toBe(0);
+  });
+
+  it("handles no comparable data without dividing by zero", () => {
+    expect(punctuality([])).toMatchObject({ compared: 0, onTimePct: 0, avgVarianceMinutes: 0, worst: [] });
   });
 });
 

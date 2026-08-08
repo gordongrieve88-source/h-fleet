@@ -1,5 +1,5 @@
 import { canEdit, getDepotScope } from "@/lib/auth";
-import { fleetBoardRepo, driverLeaveRepo, referenceRepo, complianceRepo } from "@/lib/db/repositories";
+import { fleetBoardRepo, driverLeaveRepo, referenceRepo, complianceRepo, integrationRepo } from "@/lib/db/repositories";
 import { loadFleetCatalog } from "@/lib/fleet/catalog";
 import { isOnRoad } from "@/lib/wfm/fleet";
 import { addDaysUTC, fmtDate, parseYmdOrNull, todayUTC, ymd } from "@/lib/wfm/date";
@@ -20,7 +20,7 @@ export default async function FleetBoardPage({ searchParams }: { searchParams: P
   const date = parseYmdOrNull(d ?? null) ?? todayUTC();
   const dateKey = ymd(date);
 
-  const [catalog, rows, onLeaveRaw, leaveTypes, isCaptured, editor, depotScope] = await Promise.all([
+  const [catalog, rows, onLeaveRaw, leaveTypes, isCaptured, editor, depotScope, telemetry] = await Promise.all([
     loadFleetCatalog(),
     fleetBoardRepo.getBoard(date),
     driverLeaveRepo.listApprovedOn(date),
@@ -28,7 +28,10 @@ export default async function FleetBoardPage({ searchParams }: { searchParams: P
     fleetBoardRepo.isMaterialised(date),
     canEdit(),
     getDepotScope(),
+    integrationRepo.telemetryForDay(date),
   ]);
+  const actualByTruck = new Map(telemetry.map((t) => [t.truckId, t.actualStart]));
+  const telemetryIsSample = telemetry.some((t) => t.isSample);
   // Depot names this user may edit; null = all of them.
   const editableDepots =
     depotScope === null ? null : catalog.depots.filter((dep) => depotScope.includes(dep.id)).map((dep) => dep.name);
@@ -138,6 +141,8 @@ export default async function FleetBoardPage({ searchParams }: { searchParams: P
         canEdit={editor}
         editableDepots={editableDepots}
         isCaptured={isCaptured}
+        actualStarts={Object.fromEntries(actualByTruck)}
+        telemetryIsSample={telemetryIsSample}
       />
     </div>
   );

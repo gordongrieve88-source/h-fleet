@@ -63,7 +63,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           { label: "Activity", hint: "Audit trail", href: "/activity" },
         ]
       : []),
-    ...(canManage ? [{ label: "Setup", hint: "Leave types & public holidays", href: "/setup" }] : []),
+    ...(canManage
+      ? [
+          { label: "Integrations", hint: "HR & telematics feeds", href: "/integrations" },
+          { label: "Setup", hint: "Leave types & public holidays", href: "/setup" },
+        ]
+      : []),
   ];
   const fleetDrivers = canEdit ? await fleetRepo.listDrivers() : [];
   const people: PaletteEntry[] = fleetDrivers.map((d) => ({

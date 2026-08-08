@@ -124,6 +124,59 @@ model Notification {
 }
 
 // ============================================================================
+//  INTEGRATIONS  (inbound feeds from other corporate systems)
+// ----------------------------------------------------------------------------
+//  H-Fleet consumes data it doesn't own — people/leave balances from the HR
+//  system, vehicle actuals from telematics. Each connector is a provider
+//  behind one interface (lib/integrations), chosen by configuration, so
+//  swapping a sample provider for the real vendor is a config change.
+// ============================================================================
+
+/// One execution of a connector — the audit trail for automated data changes.
+/// `isSample` is recorded permanently so demo runs can never be mistaken for
+/// real vendor data after the fact.
+model IntegrationRun {
+  id         Int       @id @default(autoincrement())
+  connector  String // "people" / "telematics"
+  provider   String // "sample" / "csv" / "http"
+  isSample   Boolean   @default(false)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  status     String    @default("RUNNING") // RUNNING / OK / FAILED / PREVIEW
+  summary    String    @default("")
+  detail     String? // JSON: counts, errors, per-record notes
+  dryRun     Boolean   @default(false)
+
+  triggeredByUserId Int?
+
+  @@index([connector, startedAt])
+}
+
+/// What a truck actually did on a day, observed by telematics — as opposed to
+/// what the roster planned. Keyed like TruckAssignment so the two line up.
+model TruckTelemetry {
+  id          Int      @id @default(autoincrement())
+  date        DateTime // UTC midnight; treated as a date
+  truckId     String
+  /// Observed first-movement / depot-departure time, "HH:MM" 24h.
+  actualStart String?
+  odometerKm  Float?
+  engineHours Float?
+  /// Vendor fault/DTC code seen that day, if any — feeds breakdown evidence.
+  faultCode   String?
+  source      String   @default("sample")
+  isSample    Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  truck Truck @relation(fields: [truckId], references: [id], onDelete: Cascade)
+
+  @@unique([date, truckId])
+  @@index([date])
+}
+
+// ============================================================================
 //  FLEET  (metro driver/truck daily roster)
 // ----------------------------------------------------------------------------
 //  194 drivers and ~149 agitator trucks across 13 depots, replacing the
@@ -201,6 +254,7 @@ model Truck {
   depot         Depot             @relation(fields: [depotId], references: [id])
   defaultDriver Driver?           @relation("TruckDefaultDriver", fields: [defaultDriverId], references: [id], onDelete: SetNull)
   assignments   TruckAssignment[]
+  telemetry     TruckTelemetry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -37,6 +37,8 @@ export function FleetBoard({
   canEdit,
   editableDepots,
   isCaptured,
+  actualStarts,
+  telemetryIsSample,
 }: {
   date: string;
   catalog: FleetCatalogVM;
@@ -49,6 +51,10 @@ export function FleetBoard({
   editableDepots: string[] | null;
   /** Whether this day is saved history vs a live roll-forward synthesis. */
   isCaptured: boolean;
+  /** Observed departure per truck from telematics, "HH:MM". */
+  actualStarts: Record<string, string | null>;
+  /** True when today's telemetry came from a demonstration provider. */
+  telemetryIsSample: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -177,6 +183,14 @@ export function FleetBoard({
               Week
             </Link>
             {weekend && <span className="ml-1 rounded-full bg-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500">Weekend</span>}
+            {telemetryIsSample && (
+              <span
+                className="ml-1 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800"
+                title="Actual start times on this day came from the sample telematics provider — demonstration data, not the real vendor."
+              >
+                Sample actuals
+              </span>
+            )}
             <span
               className={`ml-1 rounded-full px-2 py-1 text-[11px] font-medium ${
                 isCaptured ? "bg-brand-mid/15 text-brand-deep" : "border border-dashed border-slate-300 text-slate-400"
@@ -278,6 +292,7 @@ export function FleetBoard({
                               pickedDriver={a.driverId != null && a.driverId === picked}
                               placeActive={rowEditable(a.truck) && picked != null}
                               onPlace={() => picked != null && doMove(picked, a.truck)}
+                              actualStart={actualStarts[a.truck] ?? null}
                             />
                           ))}
                         </div>

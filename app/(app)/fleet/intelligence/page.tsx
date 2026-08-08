@@ -2,8 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isInsightsRole } from "@/lib/auth/roles";
-import { fleetBoardRepo, fleetRepo } from "@/lib/db/repositories";
-import { availabilityByDay, mean, plannedVsActual, truckReliability } from "@/lib/wfm/analytics";
+import { fleetBoardRepo, fleetRepo, integrationRepo } from "@/lib/db/repositories";
+import { availabilityByDay, mean, plannedVsActual, punctuality, truckReliability } from "@/lib/wfm/analytics";
 import { addDaysUTC, fmtDate, parseYmdOrNull, todayUTC, ymd } from "@/lib/wfm/date";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
@@ -32,7 +32,23 @@ export default async function FleetIntelligencePage({
   const end = parseYmdOrNull(sp.to ?? null) ?? todayUTC();
   const start = addDaysUTC(end, -(windowDays - 1));
 
-  const [rows, trucks] = await Promise.all([fleetBoardRepo.assignmentsInRange(start, end), fleetRepo.listAllTrucks()]);
+  const [rows, trucks, telemetry, rosteredTimes] = await Promise.all([
+    fleetBoardRepo.assignmentsInRange(start, end),
+    fleetRepo.listAllTrucks(),
+    integrationRepo.telemetryForRange(start, end),
+    fleetBoardRepo.startTimesInRange(start, end),
+  ]);
+
+  // Punctuality needs both sides: the rostered time and the observed one.
+  const rosteredByKey = new Map(rosteredTimes.map((r) => [`${ymd(r.date)}|${r.truckId}`, r.time]));
+  const punct = punctuality(
+    telemetry.map((t) => ({
+      truckId: t.truckId,
+      rostered: rosteredByKey.get(`${ymd(t.date)}|${t.truckId}`) ?? null,
+      actual: t.actualStart,
+    })),
+  );
+  const punctualityIsSample = telemetry.some((t) => t.isSample);
 
   const capturedDays = new Set(rows.map((r) => ymd(r.date))).size;
   const truckMeta = new Map(trucks.map((t) => [t.id, t]));
@@ -100,6 +116,55 @@ export default async function FleetIntelligencePage({
               format={(v) => `${Math.round(v * 100)}%`}
             />
           </section>
+
+          {/* On-time performance (needs the telematics connector) */}
+          {punct.compared > 0 && (
+            <section className="rounded-xl border border-slate-200 bg-white shadow-card">
+              <div className="flex flex-wrap items-baseline gap-2 border-b border-slate-100 px-4 py-2.5">
+                <h2 className="text-sm font-semibold text-brand-deep">On-time departures</h2>
+                {punctualityIsSample && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                    Sample data
+                  </span>
+                )}
+                <span className="ml-auto text-[11px] text-slate-400">
+                  {punct.compared} departures compared · within 5 min counts as on time
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 p-3.5 sm:grid-cols-4">
+                <Kpi label="On time" value={`${Math.round(punct.onTimePct * 100)}%`} tone={punct.onTimePct >= 0.9 ? "good" : punct.onTimePct >= 0.75 ? "warn" : "bad"} big />
+                <Kpi label="Late" value={`${punct.late}`} tone={punct.late > 0 ? "warn" : "good"} />
+                <Kpi label="Early" value={`${punct.early}`} tone="neutral" />
+                <Kpi label="Avg variance" value={`${punct.avgVarianceMinutes > 0 ? "+" : ""}${punct.avgVarianceMinutes}m`} tone="neutral" />
+              </div>
+              {punct.worst.length > 0 && (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400">
+                      <th className="px-4 py-1.5 font-semibold">Truck</th>
+                      <th className="px-3 py-1.5 font-semibold">Late departures</th>
+                      <th className="px-3 py-1.5 font-semibold">Of compared</th>
+                      <th className="px-3 py-1.5 font-semibold">Avg when late</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {punct.worst.slice(0, 10).map((w) => (
+                      <tr key={w.truck}>
+                        <td className="px-4 py-1.5 font-mono font-semibold text-slate-700">{w.truck}</td>
+                        <td className="px-3 py-1.5 tabular-nums font-semibold text-amber-700">{w.late}</td>
+                        <td className="px-3 py-1.5 tabular-nums text-slate-500">{w.compared}</td>
+                        <td className="px-3 py-1.5 tabular-nums text-slate-600">+{w.avgLateMinutes} min</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+                Rostered start times come from the Syncrotess import; actual departures from the telematics connector.
+                The gap is the one number that shows whether the plan survives contact with the morning.
+              </p>
+            </section>
+          )}
 
           {/* Reliability */}
           <section className="rounded-xl border border-slate-200 bg-white shadow-card">
