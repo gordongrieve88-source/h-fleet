@@ -13,6 +13,7 @@ const SELECT_TEXT = { on: "text-brand-mid", warn: "text-amber-600", off: "text-r
  *  a tap target for tap-to-place moves. */
 export function TruckRow({
   row,
+  awayAt,
   typeTag,
   driver,
   statusCodes,
@@ -28,6 +29,8 @@ export function TruckRow({
   onPlace,
 }: {
   row: TruckAssignmentVM;
+  /** Plant the truck is lent to today (from the allocation import), or null at home. */
+  awayAt: string | null;
   /** Vehicle type shown as a small tag — null hides it (single-type fleets). */
   typeTag: string | null;
   driver: DriverVM | null;
@@ -84,6 +87,11 @@ export function TruckRow({
       <span className="font-mono text-[12px] font-semibold text-slate-500">
         {row.truck}
         {typeTag && <span className="mt-0.5 block font-sans text-[9px] font-medium uppercase tracking-wide text-slate-400">{typeTag}</span>}
+        {awayAt && (
+          <span className="mt-0.5 block font-sans text-[9px] font-semibold uppercase tracking-wide text-violet-600" title={`Working at ${awayAt} today`}>
+            @ {awayAt}
+          </span>
+        )}
       </span>
 
       <div className="min-w-0">

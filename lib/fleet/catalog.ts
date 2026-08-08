@@ -40,6 +40,8 @@ export interface TruckAssignmentVM {
   status: string;
   driverId: number | null;
   time: string | null;
+  /** Plant the truck works this day (imported); null until a sheet lands. */
+  workLocation: string | null;
 }
 
 export interface DriverLeaveVM {

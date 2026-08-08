@@ -7,6 +7,8 @@ export interface FleetBoardRow {
   status: string;
   driverId: number | null;
   time: string | null;
+  /** The plant the truck works this day (imported), when it's saved. */
+  workLocation: string | null;
 }
 
 /** What a driver move actually did — feeds the audit line. */
@@ -48,10 +50,16 @@ export const fleetBoardRepo = {
   async getBoard(date: Date): Promise<FleetBoardRow[]> {
     const saved = await prisma.truckAssignment.findMany({
       where: { date },
-      select: { truckId: true, status: true, driverId: true, time: true },
+      select: { truckId: true, status: true, driverId: true, time: true, workLocation: true },
     });
     if (saved.length > 0) {
-      return saved.map((a) => ({ truck: a.truckId, status: a.status, driverId: a.driverId, time: a.time }));
+      return saved.map((a) => ({
+        truck: a.truckId,
+        status: a.status,
+        driverId: a.driverId,
+        time: a.time,
+        workLocation: a.workLocation,
+      }));
     }
     return this.synthesise(date);
   },
@@ -73,6 +81,7 @@ export const fleetBoardRepo = {
         status: onLv ? "OFF-ND" : "ON",
         driverId: onLv ? null : t.defaultDriverId,
         time: "",
+        workLocation: null,
       };
     });
   },
@@ -187,10 +196,10 @@ export const fleetBoardRepo = {
    */
   async applyAllocations(
     date: Date,
-    allocations: { truckId: string; driverId: number | null; time: string | null }[],
+    allocations: { truckId: string; driverId: number | null; time: string | null; workLocation?: string | null }[],
     applyDrivers: boolean,
     userId: number | null,
-  ): Promise<{ timesSet: number; moves: number }> {
+  ): Promise<{ timesSet: number; moves: number; locations: number }> {
     return retryOnUniqueClash(() =>
       prisma.$transaction(async (tx) => {
         await this.ensureMaterialised(tx, date, userId);
@@ -217,29 +226,34 @@ export const fleetBoardRepo = {
 
         let timesSet = 0;
         let moves = 0;
+        let locations = 0;
         for (const a of allocations) {
           const row = await tx.truckAssignment.findUnique({
             where: { date_truckId: { date, truckId: a.truckId } },
-            select: { driverId: true, status: true, time: true },
+            select: { driverId: true, status: true, time: true, workLocation: true },
           });
           if (!row) continue; // unknown trucks are filtered before commit
-          const data: { time?: string; driverId?: number; status?: string; updatedByUserId: number | null } = {
+          const data: { time?: string; driverId?: number; status?: string; workLocation?: string; updatedByUserId: number | null } = {
             updatedByUserId: userId,
           };
           if (a.time != null && a.time !== row.time) {
             data.time = a.time;
             timesSet++;
           }
+          if (a.workLocation != null && a.workLocation !== row.workLocation) {
+            data.workLocation = a.workLocation;
+            locations++;
+          }
           if (applyDrivers && a.driverId != null && row.driverId !== a.driverId) {
             data.driverId = a.driverId;
             if (row.status === "OFF-ND") data.status = "ON";
             moves++;
           }
-          if (data.time !== undefined || data.driverId !== undefined) {
+          if (data.time !== undefined || data.driverId !== undefined || data.workLocation !== undefined) {
             await tx.truckAssignment.update({ where: { date_truckId: { date, truckId: a.truckId } }, data });
           }
         }
-        return { timesSet, moves };
+        return { timesSet, moves, locations };
       }),
     );
   },

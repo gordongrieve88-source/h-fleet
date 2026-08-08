@@ -7,6 +7,7 @@ import { fleetBoardRepo, fleetRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 import { extractPdfLines } from "@/lib/import/pdf";
 import { parseAllocationLines, type EntryStatus } from "@/lib/import/syncrotess";
+import { awayPlant } from "@/lib/wfm/fleet";
 import { dateFromKey, fmtDate, parseYmdOrNull } from "@/lib/wfm/date";
 
 /** One previewed allocation row, ready for the review table. */
@@ -17,6 +18,10 @@ export interface PreviewEntry {
   driverId: number | null;
   driverName: string | null;
   time: string | null;
+  /** The sheet's Location column (the plant), when present. */
+  location: string | null;
+  /** Tidied plant name when the truck works away from its home depot today. */
+  awayAt: string | null;
   status: EntryStatus;
   /** False when the truck's depot is outside the importer's scope. */
   editable: boolean;
@@ -47,8 +52,10 @@ export async function parseAllocationPdf(formData: FormData): Promise<ParseResul
       drivers: drivers.map((d) => ({ id: d.id, name: d.name, empNo: d.employeeNo })),
     });
     const depotByTruck = new Map(trucks.map((t) => [t.id, t.depotId]));
+    const depotNameByTruck = new Map(trucks.map((t) => [t.id, t.depot.name]));
     const entries: PreviewEntry[] = outcome.entries.map((e) => ({
       ...e,
+      awayAt: e.truckId ? awayPlant(e.location, depotNameByTruck.get(e.truckId) ?? "") : null,
       editable: e.truckId == null || depotInScope(scope, depotByTruck.get(e.truckId)!),
     }));
     if (entries.length === 0) {
@@ -66,13 +73,14 @@ export interface CommitResult {
   applied?: number;
   timesSet?: number;
   moves?: number;
+  locations?: number;
   skippedScope?: number;
 }
 
 export async function commitAllocationImport(input: {
   dateKey: string;
   applyDrivers: boolean;
-  allocations: { truckId: string; driverId: number | null; time: string | null }[];
+  allocations: { truckId: string; driverId: number | null; time: string | null; workLocation: string | null }[];
 }): Promise<CommitResult> {
   const user = await requireEdit();
   if (!parseYmdOrNull(input.dateKey)) return { ok: false, error: "Invalid date." };
@@ -89,18 +97,18 @@ export async function commitAllocationImport(input: {
     const skippedScope = known.length - inScope.length;
     if (inScope.length === 0) return { ok: false, error: "Every selected truck is outside your depots." };
 
-    const { timesSet, moves } = await fleetBoardRepo.applyAllocations(date, inScope, input.applyDrivers, user.id);
+    const { timesSet, moves, locations } = await fleetBoardRepo.applyAllocations(date, inScope, input.applyDrivers, user.id);
     await logAction(
       user,
       "fleet.import",
       "TruckAssignment",
       null,
-      `Imported Syncrotess allocations for ${fmtDate(date)} — ${inScope.length} trucks, ${timesSet} start times, ${moves} driver placements${skippedScope ? `, ${skippedScope} outside scope skipped` : ""}`,
+      `Imported Syncrotess allocations for ${fmtDate(date)} — ${inScope.length} trucks, ${timesSet} start times, ${locations} work locations, ${moves} driver placements${skippedScope ? `, ${skippedScope} outside scope skipped` : ""}`,
     );
     revalidatePath("/fleet");
     revalidatePath("/fleet/week");
     revalidatePath("/");
-    return { ok: true, applied: inScope.length, timesSet, moves, skippedScope };
+    return { ok: true, applied: inScope.length, timesSet, moves, locations, skippedScope };
   } catch (e) {
     return { ok: false, error: String(e).replace(/^Error:\s*/, "").slice(0, 200) };
   }

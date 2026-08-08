@@ -36,6 +36,18 @@ export function isOnRoad(code: string): boolean {
   return code.trim().toUpperCase().startsWith("ON");
 }
 
+/**
+ * "Working away" label: the imported work location vs the truck's home
+ * depot, compared on their first words ("CAMELLIA CONCRETE" vs "Camellia").
+ * Returns the tidied plant name when the truck is lent out, null when home.
+ */
+export function awayPlant(workLocation: string | null | undefined, homeDepot: string): string | null {
+  if (!workLocation) return null;
+  const plant = workLocation.trim().split(/\s+/)[0] ?? "";
+  if (!plant || plant.toLowerCase() === (homeDepot.trim().split(/\s+/)[0] ?? "").toLowerCase()) return null;
+  return plant.charAt(0).toUpperCase() + plant.slice(1).toLowerCase();
+}
+
 export interface FleetAvail {
   on: number;
   off: number;

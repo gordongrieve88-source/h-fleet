@@ -22,9 +22,9 @@ describe("roll-forward synthesis", () => {
   it("an unsaved day is synthesised from default drivers, nothing is written", async () => {
     const board = await fleetBoardRepo.getBoard(DAY);
     expect(board).toEqual([
-      { truck: "T1", status: "ON", driverId: fx.driver1, time: "" },
-      { truck: "T2", status: "ON", driverId: fx.driver2, time: "" },
-      { truck: "T3", status: "ON", driverId: null, time: "" },
+      { truck: "T1", status: "ON", driverId: fx.driver1, time: "", workLocation: null },
+      { truck: "T2", status: "ON", driverId: fx.driver2, time: "", workLocation: null },
+      { truck: "T3", status: "ON", driverId: null, time: "", workLocation: null },
     ]);
     expect(await fleetBoardRepo.isMaterialised(DAY)).toBe(false);
   });
@@ -38,7 +38,7 @@ describe("roll-forward synthesis", () => {
       createdByUserId: null,
     });
     const board = await fleetBoardRepo.getBoard(DAY);
-    expect(board.find((r) => r.truck === "T2")).toEqual({ truck: "T2", status: "OFF-ND", driverId: null, time: "" });
+    expect(board.find((r) => r.truck === "T2")).toEqual({ truck: "T2", status: "OFF-ND", driverId: null, time: "", workLocation: null });
   });
 });
 
@@ -141,7 +141,7 @@ describe("applyAllocations — the Syncrotess import", () => {
       true,
       null,
     );
-    expect(res).toEqual({ timesSet: 2, moves: 2 });
+    expect(res).toEqual({ timesSet: 2, moves: 2, locations: 0 });
     expect(await savedRow("T2")).toMatchObject({ driverId: fx.driver1, time: "06:00" });
     expect(await savedRow("T3")).toMatchObject({ driverId: fx.driver3, time: "05:30" });
     // driver1 left T1; the sheet didn't re-place driver2, so T2's old driver is off.
@@ -152,7 +152,7 @@ describe("applyAllocations — the Syncrotess import", () => {
 
   it("applyDrivers=false touches only the times", async () => {
     const res = await fleetBoardRepo.applyAllocations(DAY, [{ truckId: "T2", driverId: fx.driver1, time: "06:45" }], false, null);
-    expect(res).toEqual({ timesSet: 1, moves: 0 });
+    expect(res).toEqual({ timesSet: 1, moves: 0, locations: 0 });
     expect(await savedRow("T2")).toMatchObject({ driverId: fx.driver2, time: "06:45" }); // original driver kept
   });
 
@@ -163,10 +163,23 @@ describe("applyAllocations — the Syncrotess import", () => {
   });
 
   it("re-importing the same sheet is a no-op", async () => {
-    const allocs = [{ truckId: "T2", driverId: fx.driver1, time: "06:00" }];
+    const allocs = [{ truckId: "T2", driverId: fx.driver1, time: "06:00", workLocation: "TESTVILLE CONCRETE" }];
     await fleetBoardRepo.applyAllocations(DAY, allocs, true, null);
     const second = await fleetBoardRepo.applyAllocations(DAY, allocs, true, null);
-    expect(second).toEqual({ timesSet: 0, moves: 0 });
+    expect(second).toEqual({ timesSet: 0, moves: 0, locations: 0 });
+  });
+
+  it("stores the day's work location (a truck lent to another plant)", async () => {
+    const res = await fleetBoardRepo.applyAllocations(
+      DAY,
+      [{ truckId: "T1", driverId: null, time: "06:33", workLocation: "OTHERVILLE CONCRETE" }],
+      false,
+      null,
+    );
+    expect(res).toEqual({ timesSet: 1, moves: 0, locations: 1 });
+    expect(await savedRow("T1")).toMatchObject({ time: "06:33", workLocation: "OTHERVILLE CONCRETE" });
+    const board = await fleetBoardRepo.getBoard(DAY);
+    expect(board.find((r) => r.truck === "T1")?.workLocation).toBe("OTHERVILLE CONCRETE");
   });
 });
 

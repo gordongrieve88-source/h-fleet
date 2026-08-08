@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FleetCatalogVM, TruckAssignmentVM, DriverVM, LeaveTypeVM } from "@/lib/fleet/catalog";
-import { TRUCK_STATUS, availFor } from "@/lib/wfm/fleet";
+import { TRUCK_STATUS, availFor, awayPlant } from "@/lib/wfm/fleet";
 import { addDaysKey, dateFromKey, isWeekendKey, mondayOf, todayKey, ymd } from "@/lib/wfm/date";
 import { Kpi } from "./Kpi";
 import { TruckRow } from "./TruckRow";
@@ -68,6 +68,7 @@ export function FleetBoard({
   const truckBlock = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.block])), [catalog.trucks]);
   const truckRegion = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.region])), [catalog.trucks]);
   const truckType = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.type])), [catalog.trucks]);
+  const truckHome = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.depot])), [catalog.trucks]);
   // Per-truck editability: the user's role AND their depot scope must allow it.
   const editableSet = useMemo(() => (editableDepots === null ? null : new Set(editableDepots)), [editableDepots]);
   const rowEditable = useMemo(() => {
@@ -263,6 +264,7 @@ export function FleetBoard({
                             <TruckRow
                               key={a.truck}
                               row={a}
+                              awayAt={awayPlant(a.workLocation, truckHome[a.truck] ?? "")}
                               typeTag={mixedTypes ? (truckType[a.truck] ?? null) : null}
                               driver={a.driverId != null ? (driverById.get(a.driverId) ?? null) : null}
                               statusCodes={STATUS_CODES}

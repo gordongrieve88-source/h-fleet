@@ -23,6 +23,8 @@ export interface ParsedEntry {
   driverId: number | null;
   driverName: string | null;
   time: string | null; // "HH:MM" 24h
+  /** The sheet's Location column (the plant), when the row is tabular. */
+  location: string | null;
   status: EntryStatus;
 }
 
@@ -84,6 +86,11 @@ export function detectSheetDate(lines: string[]): string | null {
   return null;
 }
 
+/** Syncrotess prints fleet codes with a dispatch-group suffix ("PLC2213-301"). */
+function truckBase(token: string): string {
+  return token.toUpperCase().replace(/-\d+$/, "");
+}
+
 export function parseAllocationLines(
   lines: string[],
   ctx: { truckIds: string[]; drivers: ImportDriverRef[] },
@@ -93,30 +100,45 @@ export function parseAllocationLines(
   const byNameKey = new Map<string, ImportDriverRef>();
   for (const d of ctx.drivers) for (const k of nameKeys(d.name)) byNameKey.set(k, d);
 
+  // Employee numbers can be short (1–3 digits at HMA), so a bare number only
+  // counts as one when it's RARE on the sheet — structural constants like the
+  // truck-type "02" or the dispatch group "301" repeat on dozens of lines.
+  const numberFreq = new Map<string, number>();
+  for (const l of lines) {
+    for (const t of new Set(l.split(/\s+/).filter((x) => /^\d{1,7}$/.test(x)))) {
+      numberFreq.set(t, (numberFreq.get(t) ?? 0) + 1);
+    }
+  }
+
   const entries: ParsedEntry[] = [];
   const seenTrucks = new Set<string>();
   const seenDrivers = new Set<number>();
 
   for (const rawLine of lines) {
+    const cols = rawLine.split("\t").map((c) => c.trim());
     const line = rawLine.replace(/\t/g, "  ").trim();
     const tokens = line.split(/\s+/);
 
     // The anchor: a token matching a REAL fleet code (any format the fleet
-    // uses), falling back to "looks like a fleet code" so unknown trucks on
-    // the sheet get flagged rather than silently dropped.
+    // uses, dispatch-group suffix stripped), falling back to "looks like a
+    // fleet code" so unknown trucks get flagged rather than silently dropped.
     const truckToken =
-      tokens.find((t) => truckSet.has(t.toUpperCase())) ?? tokens.find((t) => TRUCK_TOKEN.test(t.toUpperCase()));
+      tokens.find((t) => truckSet.has(truckBase(t))) ?? tokens.find((t) => TRUCK_TOKEN.test(truckBase(t)));
     if (!truckToken) continue;
-    const truckId = truckSet.get(truckToken.toUpperCase()) ?? null;
+    const truckId = truckSet.get(truckBase(truckToken)) ?? null;
 
     // Time (first one on the line = start time).
     const tm = TIME_RE.exec(line);
     const time = tm ? normaliseTime(Number(tm[1]), Number(tm[2]), tm[3]) : null;
 
+    // The Location column of the tabular roster (Time|Name|…|Parking|Location|…).
+    const location = cols.length >= 6 && cols[5] !== "" ? cols[5] : null;
+
     // Driver: employee number beats name; names match on normalised forms.
     let driver: ImportDriverRef | null = null;
     for (const t of tokens) {
-      const hit = /^\d{3,7}$/.test(t) ? byEmpNo.get(t) : undefined;
+      if (!/^\d{1,7}$/.test(t) || (numberFreq.get(t) ?? 0) > 2) continue;
+      const hit = byEmpNo.get(t);
       if (hit) {
         driver = hit;
         break;
@@ -149,6 +171,7 @@ export function parseAllocationLines(
       driverId: driver?.id ?? null,
       driverName: driver?.name ?? null,
       time,
+      location,
       status,
     });
   }

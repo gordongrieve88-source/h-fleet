@@ -213,6 +213,9 @@ model TruckAssignment {
   status   String   @default("ON") // ON / ON-FTO / … / OFF-BD / OFF-ND (lib/wfm/fleet.ts)
   driverId Int?
   time     String?
+  /// Where the truck works THIS day (from the Syncrotess Location column) —
+  /// often its home plant, but trucks get lent across plants day by day.
+  workLocation String?
   note     String?
 
   createdByUserId Int?

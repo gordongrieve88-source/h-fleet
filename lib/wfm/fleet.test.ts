@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { availFor, isOnRoad, statusKind, statusLabel, TRUCK_STATUS_CODES } from "./fleet";
+import { availFor, awayPlant, isOnRoad, statusKind, statusLabel, TRUCK_STATUS_CODES } from "./fleet";
 
 describe("statusKind", () => {
   it("classifies the spreadsheet codes", () => {
@@ -39,6 +39,20 @@ describe("isOnRoad", () => {
     expect(isOnRoad(" on-fto ")).toBe(true);
     expect(isOnRoad("OFF")).toBe(false);
     expect(isOnRoad("OFF-BD")).toBe(false);
+  });
+});
+
+describe("awayPlant — lent-out detection by first word", () => {
+  it("home plant (however the sheet spells it) is not away", () => {
+    expect(awayPlant("CAMELLIA CONCRETE", "Camellia")).toBeNull();
+    expect(awayPlant("BROOKVALE PRIMARY CONCRETE", "Brookvale")).toBeNull();
+    expect(awayPlant(null, "Camellia")).toBeNull();
+    expect(awayPlant("", "Camellia")).toBeNull();
+  });
+
+  it("a different plant reads as a tidy away label", () => {
+    expect(awayPlant("CAMELLIA CONCRETE", "Banksmeadow")).toBe("Camellia");
+    expect(awayPlant("GREENACRE CONCRETE", "Prestons")).toBe("Greenacre");
   });
 });
 
