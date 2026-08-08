@@ -2,10 +2,11 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isInsightsRole } from "@/lib/auth/roles";
 import { fleetBoardRepo, driverLeaveRepo, fleetRepo, referenceRepo } from "@/lib/db/repositories";
-import { ymd } from "@/lib/wfm/date";
+import { addDaysUTC, todayUTC, ymd } from "@/lib/wfm/date";
 import { isOnRoad } from "@/lib/wfm/fleet";
 import { PageHeader } from "@/components/PageHeader";
 import { FleetReports } from "@/components/fleet/FleetReports";
+import { TimesheetExport } from "@/components/fleet/TimesheetExport";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +108,7 @@ export default async function FleetReportsPage({ searchParams }: { searchParams:
         title="Fleet reports"
         description={`Leave, utilisation and availability for ${year}. Utilisation and availability are built from ${capturedDates.size} captured day${capturedDates.size === 1 ? "" : "s"} (days that have been edited/saved).`}
       />
+      <TimesheetExport defaultFrom={ymd(addDaysUTC(todayUTC(), -13))} defaultTo={ymd(todayUTC())} />
       <FleetReports
         year={year}
         leaveTypeCodes={typeCodes}

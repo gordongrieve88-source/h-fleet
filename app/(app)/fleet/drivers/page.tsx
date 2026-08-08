@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isEditRole } from "@/lib/auth/roles";
-import { fleetRepo } from "@/lib/db/repositories";
+import { fleetRepo, selfServiceRepo } from "@/lib/db/repositories";
 import { PageHeader } from "@/components/PageHeader";
 import { DriversAdmin } from "@/components/fleet/DriversAdmin";
 
@@ -12,7 +12,11 @@ export default async function FleetDriversPage({ searchParams }: { searchParams:
   if (!isEditRole(user?.role)) redirect("/fleet");
 
   const { q } = await searchParams;
-  const [drivers, depots] = await Promise.all([fleetRepo.listAllDrivers(), fleetRepo.listDepots()]);
+  const [drivers, depots, users] = await Promise.all([
+    fleetRepo.listAllDrivers(),
+    fleetRepo.listDepots(),
+    selfServiceRepo.listLinkableUsers(),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -32,8 +36,15 @@ export default async function FleetDriversPage({ searchParams }: { searchParams:
           workgroup: d.workgroup,
           isActive: d.isActive,
           trucks: d._count.defaultTrucks,
+          appUserId: d.appUserId,
+          appUserName: users.find((u) => u.id === d.appUserId)?.displayName ?? null,
         }))}
         depots={depots.map((d) => ({ id: d.id, name: d.name, region: d.regionName }))}
+        users={users.map((u) => ({
+          id: u.id,
+          label: `${u.displayName}${u.email ? ` · ${u.email}` : ""}`,
+          takenBy: u.driver?.name ?? null,
+        }))}
       />
     </div>
   );

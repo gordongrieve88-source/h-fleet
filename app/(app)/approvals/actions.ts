@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireApprover, requireEditForDepot, getDepotScope } from "@/lib/auth";
 import { depotInScope } from "@/lib/auth/scope";
-import { driverLeaveRepo, fleetBoardRepo } from "@/lib/db/repositories";
+import { driverLeaveRepo, fleetBoardRepo, notificationRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 import { fmtRange } from "@/lib/wfm/date";
 
@@ -44,6 +44,16 @@ export async function decideDriverLeave(id: number, approve: boolean, note: stri
     id,
     `${approve ? "Approved" : "Rejected"} ${rec.driver.name}'s ${rec.leaveTypeCode} (${range})${note ? ` — ${note}` : ""}`,
   );
+  // Tell the driver themselves, if their sign-in account is linked.
+  if (pendingRec.driver.appUserId != null) {
+    await notificationRepo.create({
+      userId: pendingRec.driver.appUserId,
+      kind: "leave",
+      title: `Your ${rec.leaveTypeCode} leave was ${approve ? "approved" : "declined"}`,
+      body: `${range}${note ? ` — ${note}` : ""}`,
+      href: "/me",
+    });
+  }
   refresh();
   return { ok: true };
 }

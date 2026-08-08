@@ -67,6 +67,8 @@ model AppUser {
 
   notifications Notification[]
   depotScopes   UserDepotScope[]
+  /// Set when this account belongs to a driver (self-service on /me).
+  driver        Driver?
 }
 
 /// Limits a SUPERVISOR to specific depots. No rows = unrestricted (scoping is
@@ -162,8 +164,12 @@ model Driver {
   depotId    Int
   workgroup  String  @default("") // free label from the data: LOD / Metro / Project …
   isActive   Boolean @default(true)
+  /// The sign-in account this driver uses for self-service (/me). Null until
+  /// linked; one account per driver. Set on the Drivers admin screen.
+  appUserId  Int?    @unique
 
   depot         Depot               @relation(fields: [depotId], references: [id])
+  appUser       AppUser?            @relation(fields: [appUserId], references: [id], onDelete: SetNull)
   leave         DriverLeave[]
   entitlements  DriverEntitlement[]
   defaultTrucks Truck[]             @relation("TruckDefaultDriver")

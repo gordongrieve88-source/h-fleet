@@ -22,6 +22,7 @@ const GROUPS: {
   {
     label: "Fleet",
     links: [
+      { href: "/me", label: "My roster", access: "all", icon: IconPeople },
       { href: "/fleet", label: "Fleet board", access: "all", icon: IconTruck },
       { href: "/fleet/week", label: "Week ahead", access: "all", icon: IconChart },
       { href: "/fleet/leave", label: "Driver leave", access: "edit", icon: IconPlane },

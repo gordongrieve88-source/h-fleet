@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireEdit, requireEditForDepot, requireManager } from "@/lib/auth";
-import { fleetRepo } from "@/lib/db/repositories";
+import { fleetRepo, selfServiceRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 
 export type ActionResult = { ok: boolean; error?: string };
@@ -23,6 +23,7 @@ function refresh() {
   revalidatePath("/fleet/trucks");
   revalidatePath("/fleet/depots");
   revalidatePath("/fleet/reports");
+  revalidatePath("/me");
 }
 
 // ---- drivers ----------------------------------------------------------------
@@ -32,12 +33,15 @@ export async function saveDriver(input: {
   name: string;
   depotId: number;
   workgroup: string;
+  /** Sign-in account for self-service: id, or null to unlink. Omit to leave as-is. */
+  appUserId?: number | null;
 }): Promise<ActionResult> {
   const user = await requireEdit();
   try {
     if (!input.name.trim() || !input.employeeNo.trim()) return { ok: false, error: "Name and employee number are required." };
     const data = { employeeNo: input.employeeNo.trim(), name: input.name.trim(), depotId: input.depotId, workgroup: input.workgroup.trim() };
     await requireEditForDepot(input.depotId, user); // the depot the driver will belong to
+    let driverId = input.id;
     if (input.id) {
       const current = await fleetRepo.getDriver(input.id);
       if (current) await requireEditForDepot(current.depotId, user); // and the one they leave
@@ -45,7 +49,20 @@ export async function saveDriver(input: {
       await logAction(user, "fleet.driver.update", "Driver", input.id, `Updated driver ${data.name} (#${data.employeeNo})`);
     } else {
       const row = await fleetRepo.createDriver(data);
+      driverId = row.id;
       await logAction(user, "fleet.driver.create", "Driver", row.id, `Added driver ${data.name} (#${data.employeeNo})`);
+    }
+    if (input.appUserId !== undefined && driverId) {
+      const linked = await selfServiceRepo.setDriverAccount(driverId, input.appUserId);
+      await logAction(
+        user,
+        "fleet.driver.link",
+        "Driver",
+        driverId,
+        input.appUserId
+          ? `Linked ${data.name} to sign-in ${linked.appUser?.displayName ?? `#${input.appUserId}`} for self-service`
+          : `Unlinked ${data.name} from self-service sign-in`,
+      );
     }
     refresh();
     return { ok: true };

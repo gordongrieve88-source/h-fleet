@@ -14,16 +14,23 @@ export type DriverRow = {
   workgroup: string;
   isActive: boolean;
   trucks: number;
+  /** Sign-in account linked for self-service (/me), if any. */
+  appUserId: number | null;
+  appUserName: string | null;
 };
 export type DepotOpt = { id: number; name: string; region: string };
+/** Sign-in accounts offered by the self-service link picker. */
+export type UserOpt = { id: number; label: string; takenBy: string | null };
 
 export function DriversAdmin({
   drivers,
   depots,
+  users,
   initialSearch = "",
 }: {
   drivers: DriverRow[];
   depots: DepotOpt[];
+  users: UserOpt[];
   initialSearch?: string;
 }) {
   const [editing, setEditing] = useState<DriverRow | "new" | null>(null);
@@ -60,7 +67,7 @@ export function DriversAdmin({
         <table className="w-full text-sm">
           <thead className="bg-brand-deep text-white">
             <tr>
-              {["Driver", "Emp #", "Depot", "Region", "Work group", "Default trucks", ""].map((h, i) => (
+              {["Driver", "Emp #", "Depot", "Region", "Work group", "Default trucks", "Self-service", ""].map((h, i) => (
                 <th key={i} className={`px-3 py-2 text-left text-[12px] font-semibold ${i === 5 ? "text-center" : ""}`}>
                   {h}
                 </th>
@@ -79,6 +86,15 @@ export function DriversAdmin({
                 <td className="px-3 py-1.5 text-slate-500">{d.region}</td>
                 <td className="px-3 py-1.5 text-slate-500">{d.workgroup}</td>
                 <td className="px-3 py-1.5 text-center text-slate-500">{d.trucks || ""}</td>
+                <td className="px-3 py-1.5 text-[12px]">
+                  {d.appUserName ? (
+                    <span className="rounded-full bg-brand-mid/10 px-2 py-0.5 font-medium text-brand-deep" title={`Signs in as ${d.appUserName}`}>
+                      {d.appUserName}
+                    </span>
+                  ) : (
+                    <span className="text-slate-300">not linked</span>
+                  )}
+                </td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-right">
                   <button onClick={() => setEditing(d)} className="rounded px-2 py-0.5 text-xs font-medium text-brand-mid hover:bg-brand-sand">
                     Edit
@@ -95,7 +111,7 @@ export function DriversAdmin({
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                   No drivers match.
                 </td>
               </tr>
@@ -105,7 +121,13 @@ export function DriversAdmin({
       </div>
 
       {editing && (
-        <DriverDialog row={editing === "new" ? null : editing} depots={depots} workgroups={workgroups} onClose={() => setEditing(null)} />
+        <DriverDialog
+          row={editing === "new" ? null : editing}
+          depots={depots}
+          users={users}
+          workgroups={workgroups}
+          onClose={() => setEditing(null)}
+        />
       )}
     </div>
   );
@@ -114,11 +136,13 @@ export function DriversAdmin({
 function DriverDialog({
   row,
   depots,
+  users,
   workgroups,
   onClose,
 }: {
   row: DriverRow | null;
   depots: DepotOpt[];
+  users: UserOpt[];
   workgroups: string[];
   onClose: () => void;
 }) {
@@ -126,9 +150,10 @@ function DriverDialog({
   const [employeeNo, setEmployeeNo] = useState(row?.employeeNo ?? "");
   const [depotId, setDepotId] = useState(row?.depotId ?? depots[0]?.id ?? 0);
   const [workgroup, setWorkgroup] = useState(row?.workgroup ?? "");
+  const [appUserId, setAppUserId] = useState<number | null>(row?.appUserId ?? null);
   const { run, pending, error } = useAction();
 
-  const submit = () => run(() => saveDriver({ id: row?.id, name, employeeNo, depotId, workgroup }), onClose);
+  const submit = () => run(() => saveDriver({ id: row?.id, name, employeeNo, depotId, workgroup, appUserId }), onClose);
 
   return (
     <Modal title={row ? `Edit ${row.name}` : "Add driver"} onClose={onClose}>
@@ -154,6 +179,21 @@ function DriverDialog({
             <option key={w} value={w} />
           ))}
         </datalist>
+      </Field>
+      <Field label="Self-service sign-in">
+        <select className={input} value={appUserId ?? ""} onChange={(e) => setAppUserId(e.target.value ? Number(e.target.value) : null)}>
+          <option value="">Not linked</option>
+          {users
+            .filter((u) => u.takenBy === null || u.id === row?.appUserId)
+            .map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.label}
+              </option>
+            ))}
+        </select>
+        <p className="mt-1 text-[11px] text-slate-400">
+          Lets this driver see their own roster, leave and ticket expiries on <b>My roster</b>. One account per driver.
+        </p>
       </Field>
       {error && <p className="mb-2 text-xs text-rose-600">{error}</p>}
       <div className="mt-1 flex justify-end gap-2">

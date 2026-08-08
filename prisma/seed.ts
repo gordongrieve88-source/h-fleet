@@ -108,6 +108,8 @@ async function main() {
     { displayName: "Team Supervisor (demo)", email: "supervisor@h-fleet.demo", role: "SUPERVISOR" },
     { displayName: "Staff A (demo)", email: "staff.a@h-fleet.demo", role: "STAFF" },
     { displayName: "Staff B (demo)", email: "staff.b@h-fleet.demo", role: "STAFF" },
+    // Signs in as a driver — shows the self-service /me view.
+    { displayName: "Driver self-service (demo)", email: "driver@h-fleet.demo", role: "STAFF" },
   ];
   for (const u of users) {
     await prisma.appUser.upsert({ where: { email: u.email }, create: u, update: u });
@@ -188,6 +190,22 @@ async function main() {
         sortOrder: i,
       },
     });
+  }
+
+  // Link the demo self-service account to a driver who actually drives a
+  // truck, so /me has a roster to show.
+  const demoDriverUser = await prisma.appUser.findUnique({ where: { email: "driver@h-fleet.demo" } });
+  const aDrivingDriver = await prisma.truck.findFirst({
+    where: { defaultDriverId: { not: null } },
+    select: { defaultDriverId: true },
+    orderBy: { sortOrder: "asc" },
+  });
+  if (demoDriverUser && aDrivingDriver?.defaultDriverId) {
+    const linked = await prisma.driver.update({
+      where: { id: aDrivingDriver.defaultDriverId },
+      data: { appUserId: demoDriverUser.id },
+    });
+    console.log(`Self-service demo account linked to driver: ${linked.name}`);
   }
 
   // ---- Driver credentials -------------------------------------------------
