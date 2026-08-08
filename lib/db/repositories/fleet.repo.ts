@@ -76,10 +76,10 @@ export const fleetRepo = {
       include: { region: true, _count: { select: { drivers: true, trucks: true } } },
     });
   },
-  createDepot(d: { name: string; regionName: string }) {
+  createDepot(d: { name: string; regionName: string; state?: string }) {
     return prisma.depot.create({ data: d });
   },
-  updateDepot(id: number, d: { name: string; regionName: string }) {
+  updateDepot(id: number, d: { name: string; regionName: string; state?: string }) {
     return prisma.depot.update({ where: { id }, data: d });
   },
   setDepotActive(id: number, isActive: boolean) {

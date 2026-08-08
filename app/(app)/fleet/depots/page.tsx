@@ -24,6 +24,7 @@ export default async function FleetDepotsPage() {
           id: d.id,
           name: d.name,
           region: d.regionName,
+          state: d.state,
           isActive: d.isActive,
           drivers: d._count.drivers,
           trucks: d._count.trucks,

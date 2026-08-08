@@ -15,6 +15,7 @@ beforeEach(async () => {
 const base = {
   kind: "TICKBOX",
   category: "Mix training",
+  states: "ALL",
   severity: "WARN",
   warnDays: 0,
   requiredForTruckType: null,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { credentialState, daysUntil, runLengthEndingAt, toDayKeySet } from "./compliance";
+import { appliesInState, credentialState, daysUntil, runLengthEndingAt, statesLabel, toDayKeySet } from "./compliance";
 import { dateFromKey } from "./date";
 
 const today = dateFromKey("2026-08-10");
@@ -23,6 +23,46 @@ describe("credentialState", () => {
   it("daysUntil counts signed days", () => {
     expect(daysUntil(dateFromKey("2026-08-13"), today)).toBe(3);
     expect(daysUntil(dateFromKey("2026-08-07"), today)).toBe(-3);
+  });
+});
+
+describe("appliesInState — which jurisdictions a credential covers", () => {
+  it("ALL (or blank) applies everywhere", () => {
+    expect(appliesInState("ALL", "NSW")).toBe(true);
+    expect(appliesInState("all", "VIC")).toBe(true);
+    expect(appliesInState("", "QLD")).toBe(true);
+    expect(appliesInState(null, "WA")).toBe(true);
+    expect(appliesInState(undefined, "SA")).toBe(true);
+  });
+
+  it("a scoped credential applies only in its own states", () => {
+    expect(appliesInState("NSW", "NSW")).toBe(true);
+    expect(appliesInState("NSW", "VIC")).toBe(false);
+    expect(appliesInState("NSW,VIC", "VIC")).toBe(true);
+    expect(appliesInState("NSW,VIC", "QLD")).toBe(false);
+  });
+
+  it("tolerates spacing and casing from hand-edited data", () => {
+    expect(appliesInState(" nsw , vic ", "VIC")).toBe(true);
+    expect(appliesInState("NSW,VIC", " vic ")).toBe(true);
+  });
+
+  it("fails OPEN, never closed — a malformed scope must not hide a licence rule", () => {
+    expect(appliesInState(",,,", "NSW")).toBe(true);
+    expect(appliesInState("   ", "NSW")).toBe(true);
+  });
+
+  it("an unknown state simply doesn't match a scoped credential", () => {
+    expect(appliesInState("NSW", "NZ")).toBe(false);
+  });
+});
+
+describe("statesLabel", () => {
+  it("reads naturally in the UI", () => {
+    expect(statesLabel("ALL")).toBe("All states");
+    expect(statesLabel("")).toBe("All states");
+    expect(statesLabel("NSW")).toBe("NSW");
+    expect(statesLabel("NSW,VIC")).toBe("NSW · VIC");
   });
 });
 

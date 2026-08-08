@@ -199,6 +199,10 @@ model Depot {
   id         Int     @id @default(autoincrement())
   name       String  @unique
   regionName String
+  /// Which state this depot physically sits in — the anchor for anything
+  /// that varies by jurisdiction (credentials, public holidays). The fleet
+  /// began as NSW-only, hence the default.
+  state      String  @default("NSW")
   sortOrder  Int     @default(0)
   isActive   Boolean @default(true)
 
@@ -337,6 +341,11 @@ model CredentialType {
   name                 String
   kind                 String  @default("EXPIRY") // EXPIRY / TICKBOX
   category             String  @default("Tickets & medicals")
+  /// Where this credential applies: "ALL", or a CSV of states like
+  /// "NSW,VIC" — same wire format as PublicHoliday.states. A driver only
+  /// sees, and is only gated by, credentials that apply in their depot's
+  /// state, so a NSW-only ticket never follows the fleet interstate.
+  states               String  @default("ALL")
   severity             String  @default("WARN") // WARN / BLOCK
   warnDays             Int     @default(30)
   requiredForTruckType String?

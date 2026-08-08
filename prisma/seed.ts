@@ -219,15 +219,19 @@ async function main() {
     { code: "MED", name: "Commercial driver medical", kind: "EXPIRY", category: T, severity: "WARN", warnDays: 60, requiredForTruckType: null, sortOrder: 2 },
     { code: "IND", name: "General site induction", kind: "EXPIRY", category: T, severity: "WARN", warnDays: 30, requiredForTruckType: null, sortOrder: 3 },
     // Truck sign-offs — the enforceable ones.
-    { code: "AGI", name: "Agitator sign-off", kind: "TICKBOX", category: "Truck types", severity: "WARN", warnDays: 0, requiredForTruckType: "Agitator", sortOrder: 10 },
+    { code: "AGI", name: "Agitator sign-off", kind: "TICKBOX", states: "ALL", category: "Truck types", severity: "WARN", warnDays: 0, requiredForTruckType: "Agitator", sortOrder: 10 },
+    // Jurisdiction-specific examples — these only reach drivers whose depot
+    // is in that state, which is what makes the fleet portable interstate.
+    { code: "NSWWHS", name: "NSW WHS white card", kind: "TICKBOX", category: "Site inductions", states: "NSW", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 32 },
+    { code: "VICRWY", name: "VIC rail-corridor induction", kind: "TICKBOX", category: "Site inductions", states: "VIC", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 33 },
     // Mix competencies.
-    { code: "MXHS", name: "High-strength mixes", kind: "TICKBOX", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 20 },
-    { code: "MXCOL", name: "Coloured / architectural", kind: "TICKBOX", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 21 },
-    { code: "MXSHOT", name: "Shotcrete", kind: "TICKBOX", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 22 },
+    { code: "MXHS", name: "High-strength mixes", kind: "TICKBOX", states: "ALL", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 20 },
+    { code: "MXCOL", name: "Coloured / architectural", kind: "TICKBOX", states: "ALL", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 21 },
+    { code: "MXSHOT", name: "Shotcrete", kind: "TICKBOX", states: "ALL", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 22 },
     // Job-site inductions — informational: the board knows which plant a
     // truck works from, not which customer site it's sent to.
-    { code: "STA", name: "Site A — major project", kind: "TICKBOX", category: "Site inductions", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 30 },
-    { code: "STB", name: "Site B — rail corridor", kind: "TICKBOX", category: "Site inductions", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 31 },
+    { code: "STA", name: "Site A — major project", kind: "TICKBOX", states: "ALL", category: "Site inductions", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 30 },
+    { code: "STB", name: "Site B — rail corridor", kind: "TICKBOX", states: "ALL", category: "Site inductions", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 31 },
   ];
   for (const ct of credentialTypes) {
     await prisma.credentialType.upsert({ where: { code: ct.code }, create: ct, update: ct });

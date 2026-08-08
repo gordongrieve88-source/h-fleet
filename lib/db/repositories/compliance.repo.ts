@@ -1,5 +1,6 @@
 import { prisma } from "../client";
 import { isOnRoad } from "@/lib/wfm/fleet";
+import { appliesInState } from "@/lib/wfm/compliance";
 import { ymd, addDaysUTC } from "@/lib/wfm/date";
 
 /**
@@ -24,6 +25,7 @@ export const complianceRepo = {
     name: string;
     kind: string;
     category: string;
+    states: string;
     severity: string;
     warnDays: number;
     requiredForTruckType: string | null;
@@ -37,6 +39,7 @@ export const complianceRepo = {
       name: string;
       kind: string;
       category: string;
+      states: string;
       severity: string;
       warnDays: number;
       requiredForTruckType: string | null;
@@ -72,13 +75,15 @@ export const complianceRepo = {
       orderBy: [{ driver: { name: "asc" } }, { typeCode: "asc" }],
     });
   },
-  /** Credentials for a set of drivers (doctor checks) — active types only. */
-  forDrivers(driverIds: number[]) {
-    if (driverIds.length === 0) return Promise.resolve([]);
-    return prisma.driverCredential.findMany({
+  /** Credentials for a set of drivers (doctor checks) — active types that
+   *  apply in the driver's own state. */
+  async forDrivers(driverIds: number[]) {
+    if (driverIds.length === 0) return [];
+    const rows = await prisma.driverCredential.findMany({
       where: { driverId: { in: driverIds }, type: { isActive: true } },
-      include: { type: true },
+      include: { type: true, driver: { select: { depot: { select: { state: true } } } } },
     });
+    return rows.filter((r) => appliesInState(r.type.states, r.driver.depot.state));
   },
   getCredential(id: number) {
     return prisma.driverCredential.findUnique({ where: { id }, include: { driver: true, type: true } });
@@ -97,16 +102,18 @@ export const complianceRepo = {
     return prisma.driverCredential.delete({ where: { id }, include: { driver: true, type: true } });
   },
 
-  /** Expired credentials whose type BLOCKS rostering — the move-time gate. */
-  expiredBlocking(driverId: number, today: Date) {
-    return prisma.driverCredential.findMany({
-      where: {
-        driverId,
-        expiresOn: { lt: today },
-        type: { isActive: true, severity: "BLOCK" },
-      },
-      include: { type: true },
-    });
+  /** Expired credentials whose type BLOCKS rostering — the move-time gate.
+   *  Only those that apply in the driver's own state. */
+  async expiredBlocking(driverId: number, today: Date) {
+    const [rows, driver] = await Promise.all([
+      prisma.driverCredential.findMany({
+        where: { driverId, expiresOn: { lt: today }, type: { isActive: true, severity: "BLOCK" } },
+        include: { type: true },
+      }),
+      prisma.driver.findUnique({ where: { id: driverId }, select: { depot: { select: { state: true } } } }),
+    ]);
+    const state = driver?.depot.state ?? "";
+    return rows.filter((r) => appliesInState(r.type.states, state));
   },
 
   /**
@@ -114,9 +121,13 @@ export const complianceRepo = {
    * second move-time gate ("can they drive this kind of truck?").
    */
   async missingForTruckType(driverId: number, truckType: string) {
-    const required = await prisma.credentialType.findMany({
-      where: { isActive: true, requiredForTruckType: truckType },
-    });
+    const [all, driver] = await Promise.all([
+      prisma.credentialType.findMany({ where: { isActive: true, requiredForTruckType: truckType } }),
+      prisma.driver.findUnique({ where: { id: driverId }, select: { depot: { select: { state: true } } } }),
+    ]);
+    // A sign-off only gates where it applies: a VIC-only requirement must
+    // not stop a NSW driver being rostered.
+    const required = all.filter((t) => appliesInState(t.states, driver?.depot.state ?? ""));
     if (required.length === 0) return [];
     const held = new Set(
       (
@@ -129,12 +140,15 @@ export const complianceRepo = {
     return required.filter((r) => !held.has(r.code));
   },
 
-  /** Everything a driver holds, plus every active type — the profile view. */
+  /** Everything a driver holds, plus every active type that applies in their
+   *  state — the profile view. */
   async profileFor(driverId: number) {
-    const [types, held] = await Promise.all([
+    const [allTypes, held, driver] = await Promise.all([
       prisma.credentialType.findMany({ where: { isActive: true }, orderBy: [{ category: "asc" }, { sortOrder: "asc" }] }),
       prisma.driverCredential.findMany({ where: { driverId }, select: { typeCode: true, expiresOn: true, reference: true } }),
+      prisma.driver.findUnique({ where: { id: driverId }, select: { depot: { select: { state: true } } } }),
     ]);
+    const types = allTypes.filter((t) => appliesInState(t.states, driver?.depot.state ?? ""));
     const heldByCode = new Map(held.map((h) => [h.typeCode, h]));
     return types.map((t) => ({
       code: t.code,
@@ -144,6 +158,7 @@ export const complianceRepo = {
       severity: t.severity,
       warnDays: t.warnDays,
       requiredForTruckType: t.requiredForTruckType,
+      states: t.states,
       held: heldByCode.has(t.code),
       expiresOn: heldByCode.get(t.code)?.expiresOn ?? null,
       reference: heldByCode.get(t.code)?.reference ?? null,

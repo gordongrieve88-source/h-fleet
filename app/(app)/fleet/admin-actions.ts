@@ -170,16 +170,22 @@ export async function setTruckActive(id: string, isActive: boolean): Promise<Act
 }
 
 // ---- depots (org structure — managers only) ---------------------------------
-export async function saveDepot(input: { id?: number; name: string; regionName: string }): Promise<ActionResult> {
+export async function saveDepot(input: {
+  id?: number;
+  name: string;
+  regionName: string;
+  state?: string;
+}): Promise<ActionResult> {
   const user = await requireManager();
   try {
     if (!input.name.trim() || !input.regionName) return { ok: false, error: "Name and region are required." };
+    const state = (input.state ?? "NSW").trim().toUpperCase() || "NSW";
     if (input.id) {
-      await fleetRepo.updateDepot(input.id, { name: input.name.trim(), regionName: input.regionName });
-      await logAction(user, "fleet.depot.update", "Depot", input.id, `Updated depot ${input.name.trim()} (${input.regionName})`);
+      await fleetRepo.updateDepot(input.id, { name: input.name.trim(), regionName: input.regionName, state });
+      await logAction(user, "fleet.depot.update", "Depot", input.id, `Updated depot ${input.name.trim()} (${input.regionName}, ${state})`);
     } else {
-      const row = await fleetRepo.createDepot({ name: input.name.trim(), regionName: input.regionName });
-      await logAction(user, "fleet.depot.create", "Depot", row.id, `Added depot ${row.name} (${input.regionName})`);
+      const row = await fleetRepo.createDepot({ name: input.name.trim(), regionName: input.regionName, state });
+      await logAction(user, "fleet.depot.create", "Depot", row.id, `Added depot ${row.name} (${input.regionName}, ${state})`);
     }
     refresh();
     return { ok: true };

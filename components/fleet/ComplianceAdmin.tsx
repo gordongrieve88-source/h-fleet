@@ -12,6 +12,8 @@ export interface CredentialTypeVM {
   severity: "WARN" | "BLOCK";
   warnDays: number;
   requiredForTruckType: string | null;
+  /** "ALL" or a CSV like "NSW,VIC". */
+  states: string;
 }
 
 export interface CredentialCellVM {
@@ -195,9 +197,28 @@ export function ComplianceAdmin({ types, rows }: { types: CredentialTypeVM[]; ro
               <th className="px-3 py-2 font-semibold">Driver</th>
               <th className="px-3 py-2 font-semibold">Depot</th>
               {types.map((t) => (
-                <th key={t.code} className="px-3 py-2 font-semibold" title={`${t.name} — ${t.severity === "BLOCK" ? "blocks rostering when expired" : "warns when expired"}; flags ${t.warnDays}d ahead`}>
+                <th
+                  key={t.code}
+                  className="px-3 py-2 font-semibold"
+                  title={`${t.name} — ${
+                    t.kind === "TICKBOX"
+                      ? t.requiredForTruckType
+                        ? `required to drive a ${t.requiredForTruckType}`
+                        : "competency"
+                      : t.severity === "BLOCK"
+                        ? "blocks rostering when expired"
+                        : "warns when expired"
+                  }; applies in ${t.states === "ALL" ? "all states" : t.states.split(",").join(", ")}`}
+                >
                   {t.code}
-                  {t.severity === "BLOCK" && <span className="ml-1 text-rose-500" title="Blocks rostering when expired">•</span>}
+                  {t.severity === "BLOCK" && t.kind === "EXPIRY" && (
+                    <span className="ml-1 text-rose-500" title="Blocks rostering when expired">
+                      •
+                    </span>
+                  )}
+                  {t.states !== "ALL" && (
+                    <span className="ml-1 font-sans text-[9px] font-bold uppercase text-violet-600">{t.states}</span>
+                  )}
                 </th>
               ))}
             </tr>

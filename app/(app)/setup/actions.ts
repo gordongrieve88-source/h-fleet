@@ -56,6 +56,7 @@ function credentialTypeFields(formData: FormData) {
     name: String(formData.get("name") ?? "").trim(),
     kind,
     category: String(formData.get("category") ?? "").trim() || "Tickets & medicals",
+    states: String(formData.get("states") ?? "ALL").trim().toUpperCase() || "ALL",
     severity: String(formData.get("severity")) === "BLOCK" ? "BLOCK" : "WARN",
     warnDays: Math.max(0, Number(formData.get("warnDays") ?? 30) || 30),
     // Only a tick-box competency can gate a truck type.

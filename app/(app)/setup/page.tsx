@@ -95,7 +95,8 @@ export default async function SetupPage() {
                   <option value="EXPIRY">Dated ticket</option>
                   <option value="TICKBOX">Tick box</option>
                 </select>
-                <input name="category" defaultValue={ct.category} list="cred-categories" className={`${inputCls} w-40`} title="Grouping on the driver profile" />
+                <input name="category" defaultValue={ct.category} list="cred-categories" className={`${inputCls} w-36`} title="Grouping on the driver profile" />
+                <StatesPicker name="states" defaultValue={ct.states} />
                 <select name="requiredForTruckType" defaultValue={ct.requiredForTruckType ?? ""} className={inputCls} title="Tick boxes only: required to drive this truck type">
                   <option value="">Any truck</option>
                   {truckTypes.map((t) => (
@@ -165,7 +166,8 @@ export default async function SetupPage() {
             <option value="TICKBOX">Tick box</option>
             <option value="EXPIRY">Dated ticket</option>
           </select>
-          <input name="category" placeholder="Group, e.g. Mixes" list="cred-categories" className={`${inputCls} w-40`} />
+          <input name="category" placeholder="Group, e.g. Mixes" list="cred-categories" className={`${inputCls} w-36`} />
+          <StatesPicker name="states" />
           <select name="requiredForTruckType" defaultValue="" className={inputCls}>
             <option value="">Any truck</option>
             {truckTypes.map((t) => (

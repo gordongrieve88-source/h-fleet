@@ -33,6 +33,7 @@ export default async function FleetCompliancePage() {
     severity: t.severity as "WARN" | "BLOCK",
     warnDays: t.warnDays,
     requiredForTruckType: t.requiredForTruckType,
+    states: t.states,
   }));
 
   const byDriver = new Map<number, typeof credentials>();

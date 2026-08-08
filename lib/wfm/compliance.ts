@@ -15,6 +15,34 @@ import { addDaysKey, ymd } from "./date";
 export const FATIGUE_WARN_DAYS = 10;
 export const FATIGUE_CRITICAL_DAYS = 13;
 
+/** The states the app knows about — the same list the holiday picker uses. */
+export const STATES = ["NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"] as const;
+
+/**
+ * Does a credential apply where this depot is? `states` is "ALL" or a CSV
+ * ("NSW,VIC"), matching PublicHoliday.states. Anything unrecognised or empty
+ * is treated as ALL — a mis-typed scope must never silently hide a licence
+ * requirement, which is the failure that actually hurts.
+ */
+export function appliesInState(states: string | null | undefined, depotState: string): boolean {
+  const raw = (states ?? "").trim();
+  if (raw === "" || raw.toUpperCase() === "ALL") return true;
+  const scoped = raw
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  if (scoped.length === 0) return true;
+  return scoped.includes(depotState.trim().toUpperCase());
+}
+
+/** "NSW · VIC" for display, or "All states". */
+export function statesLabel(states: string | null | undefined): string {
+  const raw = (states ?? "").trim();
+  if (raw === "" || raw.toUpperCase() === "ALL") return "All states";
+  const scoped = raw.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
+  return scoped.length === 0 ? "All states" : scoped.join(" · ");
+}
+
 export type CredentialState = "ok" | "expiring" | "expired" | "none";
 
 /** Expiry state of one credential on `today` (both UTC-midnight dates).
