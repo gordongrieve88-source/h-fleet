@@ -51,7 +51,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         ]
       : []),
     ...(canManage ? [{ label: "Depots", hint: "Fleet regions & depots", href: "/fleet/depots" }] : []),
-    ...(canInsights ? [{ label: "Fleet reports", hint: "Leave · utilisation · availability", href: "/fleet/reports" }] : []),
+    ...(canInsights
+      ? [
+          { label: "Fleet reports", hint: "Leave · utilisation · availability", href: "/fleet/reports" },
+          { label: "Fleet intelligence", hint: "Reliability · trends · plan vs actual", href: "/fleet/intelligence" },
+        ]
+      : []),
     ...(canApprove
       ? [
           { label: "Approvals", hint: "Driver leave queue", href: "/approvals" },

@@ -29,6 +29,7 @@ const GROUPS: {
       { href: "/fleet/import", label: "Import allocations", access: "edit", icon: IconHistory },
       { href: "/fleet/compliance", label: "Compliance", access: "edit", icon: IconCheckBadge },
       { href: "/fleet/reports", label: "Fleet reports", access: "insights", icon: IconChart },
+      { href: "/fleet/intelligence", label: "Fleet intelligence", access: "insights", icon: IconChart },
       { href: "/fleet/drivers", label: "Drivers", access: "edit", icon: IconPeople },
       { href: "/fleet/trucks", label: "Trucks", access: "edit", icon: IconTruck },
       { href: "/fleet/depots", label: "Depots", access: "admin", icon: IconSettings },

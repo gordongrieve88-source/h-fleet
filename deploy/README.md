@@ -119,7 +119,31 @@ The database is the only state — the app tree is reproducible from git.
 - **Local/demo SQLite**: `sqlite3 prisma/dev.db ".backup backup.db"`.
 - After any restore: `systemctl restart h-fleet` and check `/api/health`.
 
-## 10. Monitoring
+## 10. BI feed (Power BI)
+
+Off unless `BI_API_TOKEN` is set in the config file (32+ hex chars). Once
+set, read-only roster analytics are available at:
+
+```
+GET /api/bi/<dataset>?from=YYYY-MM-DD&to=YYYY-MM-DD&format=json|csv
+Authorization: Bearer <BI_API_TOKEN>
+```
+
+Datasets: `assignments`, `availability`, `reliability`, `leave`,
+`plan-vs-actual`. Saved days only — projections never reach a report.
+The feed carries roster facts only: no pay, no contact details, no
+licence/medical data.
+
+In **Power BI Desktop**: *Get Data → Web → Advanced*, put the URL in, add
+an HTTP header `Authorization` = `Bearer <token>`, then *Transform Data →
+expand the `rows` column*. Set the dataset's credentials to *Anonymous*
+(the bearer header does the authenticating). Rotate the token by editing
+the config file and restarting; old reports simply start returning 401.
+
+Treat the token like a password: anyone holding it can read fleet
+history. Prefer a dedicated token per consumer if you have more than one.
+
+## 11. Monitoring
 
 - `GET /api/health` → `{"ok":true,"db":"up"}` (200) or 503 — wire this
   into your uptime monitor; it exercises the app AND the database.

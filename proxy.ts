@@ -48,6 +48,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except the auth flow, the health probe, and static assets.
-  matcher: ["/((?!auth/|api/health|_next/|favicon\\.ico|icon\\.png|logo\\.png).*)"],
+  // Everything except the auth flow, the health probe, the BI feed (which
+  // carries its own bearer token), and static assets.
+  matcher: ["/((?!auth/|api/health|api/bi/|_next/|favicon\\.ico|icon\\.png|logo\\.png).*)"],
 };

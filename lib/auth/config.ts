@@ -41,3 +41,13 @@ export function wallboardToken(): string | null {
   const t = process.env.WALLBOARD_TOKEN?.trim();
   return t && t.length >= 16 ? t : null;
 }
+
+/**
+ * Bearer token for the read-only BI feed (/api/bi/*), used by Power BI and
+ * similar tools that can't sign in interactively. Unset = the feed is off,
+ * which is the right default.
+ */
+export function biApiToken(): string | null {
+  const t = process.env.BI_API_TOKEN?.trim();
+  return t && t.length >= 24 ? t : null;
+}
