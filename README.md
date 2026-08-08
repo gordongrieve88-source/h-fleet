@@ -17,6 +17,22 @@ npm test         # unit + repository tests (Vitest); CI runs these on every push
 ```
 
 Open http://localhost:3002 (H-Fleet runs on **port 3002**; H-Crew owns 3001).
+
+### On a phone or tablet
+
+The board is built for the yard, so it's worth trying on a real device. Run
+`npm run demo:lan` instead, then on a phone **on the same wi-fi** open
+`http://<your-computer's-IP>:3002` — e.g. `http://192.168.1.24:3002`.
+
+```bash
+ipconfig getifaddr en0        # macOS
+hostname -I | awk '{print $1}' # Linux
+ipconfig                       # Windows — the IPv4 address
+```
+
+`demo:lan` serves to your whole local network, and the demo build uses the
+simulated sign-in switcher rather than real auth. Fine on a home or office
+network; don't run it on public wi-fi.
 You start signed in as view-only Staff — use the switcher at the bottom of the
 sidebar to view as a Supervisor or Manager (Gordon Grieve = full access).
 
