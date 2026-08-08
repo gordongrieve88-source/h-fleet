@@ -71,7 +71,7 @@ export function TruckRow({
         if ((e.target as HTMLElement).closest("select,button")) return;
         onPlace();
       }}
-      className={`grid grid-cols-[10px_60px_1fr_auto] items-center gap-2 rounded-lg border px-2 py-1.5 ${
+      className={`grid grid-cols-[10px_60px_1fr_auto_auto] items-center gap-2 rounded-lg border px-2 py-1.5 ${
         needsCover ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"
       } ${over ? "ring-2 ring-brand-mid" : ""} ${
         placeActive && !pickedDriver ? "cursor-pointer hover:ring-2 hover:ring-brand-mid" : ""
@@ -105,6 +105,11 @@ export function TruckRow({
           </span>
         )}
       </div>
+
+      {/* Start time — set by the Syncrotess import (blank until one runs). */}
+      <span className="w-10 text-right text-[10.5px] tabular-nums text-slate-400" title={row.time ? `Start ${row.time}` : ""}>
+        {row.time || ""}
+      </span>
 
       {canEdit ? (
         <select

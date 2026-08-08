@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: {
+    // The daily Syncrotess allocation PDF is uploaded through a server action.
+    serverActions: { bodySizeLimit: "10mb" },
+  },
   async headers() {
     return [
       {

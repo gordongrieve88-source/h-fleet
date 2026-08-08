@@ -43,6 +43,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ...(canEdit
       ? [
           { label: "Driver leave", hint: "Fleet leave planner", href: "/fleet/leave" },
+          { label: "Import allocations", hint: "Daily Syncrotess PDF", href: "/fleet/import" },
           { label: "Compliance", hint: "Licences, medicals, inductions", href: "/fleet/compliance" },
           { label: "Drivers", hint: "Fleet master data", href: "/fleet/drivers" },
           { label: "Trucks", hint: "Fleet master data", href: "/fleet/trucks" },

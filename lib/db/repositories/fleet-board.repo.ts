@@ -178,6 +178,72 @@ export const fleetBoardRepo = {
     );
   },
 
+  /**
+   * Apply a day's Syncrotess allocations in one transaction: start times
+   * always; driver placements when `applyDrivers`. Every allocated driver is
+   * first released from any other truck that day (the sheet is the whole
+   * truth for the trucks it names), and landing on an OFF-ND truck brings it
+   * back on road — same rule as a manual move.
+   */
+  async applyAllocations(
+    date: Date,
+    allocations: { truckId: string; driverId: number | null; time: string | null }[],
+    applyDrivers: boolean,
+    userId: number | null,
+  ): Promise<{ timesSet: number; moves: number }> {
+    return retryOnUniqueClash(() =>
+      prisma.$transaction(async (tx) => {
+        await this.ensureMaterialised(tx, date, userId);
+
+        if (applyDrivers) {
+          const targetByDriver = new Map(
+            allocations.filter((a) => a.driverId != null).map((a) => [a.driverId as number, a.truckId]),
+          );
+          if (targetByDriver.size > 0) {
+            const holding = await tx.truckAssignment.findMany({
+              where: { date, driverId: { in: [...targetByDriver.keys()] } },
+              select: { truckId: true, driverId: true },
+            });
+            for (const h of holding) {
+              if (targetByDriver.get(h.driverId as number) !== h.truckId) {
+                await tx.truckAssignment.update({
+                  where: { date_truckId: { date, truckId: h.truckId } },
+                  data: { driverId: null, updatedByUserId: userId },
+                });
+              }
+            }
+          }
+        }
+
+        let timesSet = 0;
+        let moves = 0;
+        for (const a of allocations) {
+          const row = await tx.truckAssignment.findUnique({
+            where: { date_truckId: { date, truckId: a.truckId } },
+            select: { driverId: true, status: true, time: true },
+          });
+          if (!row) continue; // unknown trucks are filtered before commit
+          const data: { time?: string; driverId?: number; status?: string; updatedByUserId: number | null } = {
+            updatedByUserId: userId,
+          };
+          if (a.time != null && a.time !== row.time) {
+            data.time = a.time;
+            timesSet++;
+          }
+          if (applyDrivers && a.driverId != null && row.driverId !== a.driverId) {
+            data.driverId = a.driverId;
+            if (row.status === "OFF-ND") data.status = "ON";
+            moves++;
+          }
+          if (data.time !== undefined || data.driverId !== undefined) {
+            await tx.truckAssignment.update({ where: { date_truckId: { date, truckId: a.truckId } }, data });
+          }
+        }
+        return { timesSet, moves };
+      }),
+    );
+  },
+
   /** Drop approved-leave drivers from a saved day (used after leave approval). */
   async dropDriverFromRange(driverId: number, start: Date, end: Date): Promise<number> {
     const hit = await prisma.truckAssignment.updateMany({

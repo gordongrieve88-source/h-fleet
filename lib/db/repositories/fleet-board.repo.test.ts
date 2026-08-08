@@ -129,6 +129,47 @@ describe("moveDriver", () => {
   });
 });
 
+describe("applyAllocations — the Syncrotess import", () => {
+  it("sets start times and places drivers, releasing them from other trucks", async () => {
+    // Sheet: driver1 -> T2 at 06:00, driver3 -> T3 at 05:30.
+    const res = await fleetBoardRepo.applyAllocations(
+      DAY,
+      [
+        { truckId: "T2", driverId: fx.driver1, time: "06:00" },
+        { truckId: "T3", driverId: fx.driver3, time: "05:30" },
+      ],
+      true,
+      null,
+    );
+    expect(res).toEqual({ timesSet: 2, moves: 2 });
+    expect(await savedRow("T2")).toMatchObject({ driverId: fx.driver1, time: "06:00" });
+    expect(await savedRow("T3")).toMatchObject({ driverId: fx.driver3, time: "05:30" });
+    // driver1 left T1; the sheet didn't re-place driver2, so T2's old driver is off.
+    expect((await savedRow("T1"))?.driverId).toBeNull();
+    const holdingD1 = await prisma.truckAssignment.findMany({ where: { date: DAY, driverId: fx.driver1 } });
+    expect(holdingD1.map((r) => r.truckId)).toEqual(["T2"]);
+  });
+
+  it("applyDrivers=false touches only the times", async () => {
+    const res = await fleetBoardRepo.applyAllocations(DAY, [{ truckId: "T2", driverId: fx.driver1, time: "06:45" }], false, null);
+    expect(res).toEqual({ timesSet: 1, moves: 0 });
+    expect(await savedRow("T2")).toMatchObject({ driverId: fx.driver2, time: "06:45" }); // original driver kept
+  });
+
+  it("placing a driver on a driver-not-in truck brings it back on road", async () => {
+    await fleetBoardRepo.applyChanges(DAY, [{ truckId: "T3", status: "OFF-ND" }], null);
+    await fleetBoardRepo.applyAllocations(DAY, [{ truckId: "T3", driverId: fx.driver3, time: "05:00" }], true, null);
+    expect(await savedRow("T3")).toMatchObject({ driverId: fx.driver3, status: "ON", time: "05:00" });
+  });
+
+  it("re-importing the same sheet is a no-op", async () => {
+    const allocs = [{ truckId: "T2", driverId: fx.driver1, time: "06:00" }];
+    await fleetBoardRepo.applyAllocations(DAY, allocs, true, null);
+    const second = await fleetBoardRepo.applyAllocations(DAY, allocs, true, null);
+    expect(second).toEqual({ timesSet: 0, moves: 0 });
+  });
+});
+
 describe("day lifecycle", () => {
   it("dropDriverFromRange clears the driver and marks the truck driver-not-in", async () => {
     await fleetBoardRepo.materialise(DAY, null);
