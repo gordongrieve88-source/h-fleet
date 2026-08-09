@@ -132,6 +132,9 @@ async function main() {
   await prisma.driver.deleteMany();
   await prisma.depot.deleteMany();
   await prisma.fleetRegion.deleteMany();
+  // Rebuild groups too, or a group added during testing lingers as an empty
+  // option in the selector after a re-seed.
+  await prisma.dispatchGroup.deleteMany();
 
   // The dispatch group the Syncrotess roster is printed for. Every current
   // depot belongs to it; new states get their own group.
