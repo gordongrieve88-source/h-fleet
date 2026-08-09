@@ -1,6 +1,7 @@
 import { canEdit, getDepotScope } from "@/lib/auth";
 import { fleetBoardRepo, driverLeaveRepo, referenceRepo, complianceRepo, integrationRepo } from "@/lib/db/repositories";
 import { loadFleetCatalog } from "@/lib/fleet/catalog";
+import { getViewGroup } from "@/lib/fleet/view-group";
 import { isOnRoad } from "@/lib/wfm/fleet";
 import { addDaysUTC, fmtDate, parseYmdOrNull, todayUTC, ymd } from "@/lib/wfm/date";
 import {
@@ -20,9 +21,10 @@ export default async function FleetBoardPage({ searchParams }: { searchParams: P
   const date = parseYmdOrNull(d ?? null) ?? todayUTC();
   const dateKey = ymd(date);
 
+  const group = await getViewGroup();
   const [catalog, rows, onLeaveRaw, leaveTypes, isCaptured, editor, depotScope, telemetry] = await Promise.all([
-    loadFleetCatalog(),
-    fleetBoardRepo.getBoard(date),
+    loadFleetCatalog(group),
+    fleetBoardRepo.getBoard(date, group),
     driverLeaveRepo.listApprovedOn(date),
     referenceRepo.listLeaveTypes(),
     fleetBoardRepo.isMaterialised(date),

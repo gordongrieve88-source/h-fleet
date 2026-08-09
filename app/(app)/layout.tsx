@@ -8,6 +8,8 @@ import { RoleSwitcher } from "@/components/RoleSwitcher";
 import { ToastProvider } from "@/components/Toast";
 import { NotificationsBell, type NotificationItem } from "@/components/NotificationsBell";
 import { CommandPalette, PaletteButton, type PaletteEntry } from "@/components/CommandPalette";
+import { DispatchGroupSelector } from "@/components/fleet/DispatchGroupSelector";
+import { availableGroups, getViewGroup } from "@/lib/fleet/view-group";
 
 /**
  * The authenticated shell: dark sidebar (nav + signed-in user), light content
@@ -15,7 +17,12 @@ import { CommandPalette, PaletteButton, type PaletteEntry } from "@/components/C
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const demo = authMode() === "demo";
-  const [user, users] = await Promise.all([getCurrentUser(), demo ? listDemoUsers() : Promise.resolve([])]);
+  const [user, users, groups, viewGroup] = await Promise.all([
+    getCurrentUser(),
+    demo ? listDemoUsers() : Promise.resolve([]),
+    availableGroups(),
+    getViewGroup(),
+  ]);
   const canEdit = isEditRole(user?.role);
   const canApprove = isApproverRole(user?.role);
   const canInsights = isInsightsRole(user?.role);
@@ -115,6 +122,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="print-hide sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
             <PaletteButton />
+            <DispatchGroupSelector groups={groups} current={viewGroup} />
             {demo && (
               <span
                 className="hidden rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 sm:inline"

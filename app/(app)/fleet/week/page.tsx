@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { fleetBoardRepo, driverLeaveRepo, referenceRepo } from "@/lib/db/repositories";
 import { loadFleetCatalog } from "@/lib/fleet/catalog";
+import { getViewGroup } from "@/lib/fleet/view-group";
 import { availFor } from "@/lib/wfm/fleet";
 import { addDaysUTC, fmtDayShort, fmtRange, mondayOf, parseYmdOrNull, todayUTC, ymd } from "@/lib/wfm/date";
 import { PageHeader } from "@/components/PageHeader";
@@ -19,11 +20,12 @@ export default async function FleetWeekPage({ searchParams }: { searchParams: Pr
   const days = Array.from({ length: 7 }, (_, i) => addDaysUTC(monday, i));
   const todayKey = ymd(todayUTC());
 
+  const group = await getViewGroup();
   const [catalog, holidays, ...perDay] = await Promise.all([
-    loadFleetCatalog(),
+    loadFleetCatalog(group),
     referenceRepo.listHolidays(ymd(days[0]), ymd(days[6])),
     ...days.map(async (d) => ({
-      rows: await fleetBoardRepo.getBoard(d),
+      rows: await fleetBoardRepo.getBoard(d, group),
       leave: await driverLeaveRepo.listApprovedOn(d),
       captured: await fleetBoardRepo.isMaterialised(d),
     })),

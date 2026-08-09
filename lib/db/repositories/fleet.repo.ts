@@ -1,5 +1,10 @@
 import { prisma } from "../client";
 
+/** Narrow a depot-derived query to one dispatch group; null = all groups. */
+type Group = string | null;
+const inGroup = (g: Group) => (g === null ? {} : { dispatchGroupCode: g });
+const truckInGroup = (g: Group) => (g === null ? {} : { depot: { dispatchGroupCode: g } });
+
 /**
  * Fleet master data — regions, depots, drivers, trucks. Split per use:
  * list… (active, for the catalog) and listAll…/save…/setActive (admin).
@@ -9,31 +14,32 @@ export const fleetRepo = {
   listRegions() {
     return prisma.fleetRegion.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
   },
-  listDepots() {
+  listDepots(group: Group = null) {
     return prisma.depot.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...inGroup(group) },
       orderBy: [{ region: { sortOrder: "asc" } }, { name: "asc" }],
       include: { _count: { select: { trucks: true, drivers: true } } },
     });
   },
-  listDrivers() {
+  listDrivers(group: Group = null) {
     return prisma.driver.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...truckInGroup(group) },
       orderBy: { name: "asc" },
       include: { depot: true },
     });
   },
-  listTrucks() {
+  listTrucks(group: Group = null) {
     return prisma.truck.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...truckInGroup(group) },
       orderBy: [{ region: "asc" }, { sortOrder: "asc" }],
       include: { depot: true },
     });
   },
 
   // ---- admin (active + inactive, with counts) --------------------------------
-  listAllDrivers() {
+  listAllDrivers(group: Group = null) {
     return prisma.driver.findMany({
+      where: truckInGroup(group),
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
       include: { depot: true, _count: { select: { defaultTrucks: true } } },
     });
@@ -51,8 +57,9 @@ export const fleetRepo = {
     return prisma.driver.findUnique({ where: { id }, include: { depot: true } });
   },
 
-  listAllTrucks() {
+  listAllTrucks(group: Group = null) {
     return prisma.truck.findMany({
+      where: truckInGroup(group),
       orderBy: [{ isActive: "desc" }, { region: "asc" }, { sortOrder: "asc" }],
       include: { depot: true, defaultDriver: true },
     });
@@ -70,20 +77,37 @@ export const fleetRepo = {
     return prisma.truck.findUnique({ where: { id }, include: { depot: true } });
   },
 
-  listAllDepots() {
+  listAllDepots(group: Group = null) {
     return prisma.depot.findMany({
+      where: inGroup(group),
       orderBy: [{ isActive: "desc" }, { region: { sortOrder: "asc" } }, { name: "asc" }],
-      include: { region: true, _count: { select: { drivers: true, trucks: true } } },
+      include: { region: true, dispatchGroup: true, _count: { select: { drivers: true, trucks: true } } },
     });
   },
-  createDepot(d: { name: string; regionName: string; state?: string }) {
+  createDepot(d: { name: string; regionName: string; state?: string; dispatchGroupCode?: string | null }) {
     return prisma.depot.create({ data: d });
   },
-  updateDepot(id: number, d: { name: string; regionName: string; state?: string }) {
+  updateDepot(id: number, d: { name: string; regionName: string; state?: string; dispatchGroupCode?: string | null }) {
     return prisma.depot.update({ where: { id }, data: d });
   },
   setDepotActive(id: number, isActive: boolean) {
     return prisma.depot.update({ where: { id }, data: { isActive } });
+  },
+
+  listAllDispatchGroups() {
+    return prisma.dispatchGroup.findMany({
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      include: { _count: { select: { depots: true } } },
+    });
+  },
+  createDispatchGroup(d: { code: string; name: string; state: string }) {
+    return prisma.dispatchGroup.create({ data: d });
+  },
+  updateDispatchGroup(code: string, d: { name: string; state: string }) {
+    return prisma.dispatchGroup.update({ where: { code }, data: d });
+  },
+  setDispatchGroupActive(code: string, isActive: boolean) {
+    return prisma.dispatchGroup.update({ where: { code }, data: { isActive } });
   },
 
   listAllRegions() {

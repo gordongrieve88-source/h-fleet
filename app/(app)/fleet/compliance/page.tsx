@@ -4,6 +4,7 @@ import { isEditRole } from "@/lib/auth/roles";
 import { depotInScope } from "@/lib/auth/scope";
 import { complianceRepo, fleetRepo } from "@/lib/db/repositories";
 import { credentialState, daysUntil } from "@/lib/wfm/compliance";
+import { getViewGroup } from "@/lib/fleet/view-group";
 import { todayUTC, ymd } from "@/lib/wfm/date";
 import { PageHeader } from "@/components/PageHeader";
 import { ComplianceAdmin, type ComplianceRow, type CredentialTypeVM } from "@/components/fleet/ComplianceAdmin";
@@ -21,7 +22,7 @@ export default async function FleetCompliancePage() {
   const today = todayUTC();
   const [types, drivers, credentials, depotScope] = await Promise.all([
     complianceRepo.listTypes(),
-    fleetRepo.listDrivers(),
+    fleetRepo.listDrivers(await getViewGroup()),
     complianceRepo.listAllCredentials(),
     getDepotScope(user),
   ]);

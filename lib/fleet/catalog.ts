@@ -60,13 +60,17 @@ export interface LeaveTypeVM {
 }
 
 /** Load the fleet master catalog (regions, depots, drivers, trucks) as plain VMs. */
-export async function loadFleetCatalog(): Promise<FleetCatalogVM> {
-  const [regions, depots, drivers, trucks] = await Promise.all([
+export async function loadFleetCatalog(group: string | null = null): Promise<FleetCatalogVM> {
+  const [allRegions, depots, drivers, trucks] = await Promise.all([
     fleetRepo.listRegions(),
-    fleetRepo.listDepots(),
-    fleetRepo.listDrivers(),
-    fleetRepo.listTrucks(),
+    fleetRepo.listDepots(group),
+    fleetRepo.listDrivers(group),
+    fleetRepo.listTrucks(group),
   ]);
+  // Only offer regions that still have depots in the selected group, so the
+  // board's region filter never shows an empty tab.
+  const live = new Set(depots.map((d) => d.regionName));
+  const regions = group === null ? allRegions : allRegions.filter((r) => live.has(r.name));
 
   return {
     regions: regions.map((r) => r.name),

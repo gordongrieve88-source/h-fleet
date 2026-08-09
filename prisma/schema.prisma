@@ -184,6 +184,23 @@ model TruckTelemetry {
 //  truck), every write audited, leave against the shared LeaveType list.
 // ============================================================================
 
+/// The operational unit the business dispatches by — "301 — NSW Conc" is the
+/// group the Syncrotess roster is printed for, and the suffix fleet codes
+/// carry (PLC2213-301). As the fleet grows past NSW, each state or business
+/// unit gets its own group, and the whole app can be narrowed to one.
+///
+/// `state` is the jurisdiction the group operates in, which is what depot
+/// credentials are scoped by; a group normally sits in exactly one.
+model DispatchGroup {
+  code      String  @id // "301"
+  name      String // "NSW Conc"
+  state     String  @default("NSW")
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  depots Depot[]
+}
+
 /// Fleet operating regions (Projects, Metro East/West/Central).
 model FleetRegion {
   name      String  @id
@@ -203,9 +220,12 @@ model Depot {
   /// that varies by jurisdiction (credentials, public holidays). The fleet
   /// began as NSW-only, hence the default.
   state      String  @default("NSW")
+  /// Which dispatch group runs this depot. Null until groups are set up.
+  dispatchGroupCode String?
   sortOrder  Int     @default(0)
   isActive   Boolean @default(true)
 
+  dispatchGroup    DispatchGroup?   @relation(fields: [dispatchGroupCode], references: [code], onDelete: SetNull)
   region           FleetRegion      @relation(fields: [regionName], references: [name])
   drivers          Driver[]
   trucks           Truck[]

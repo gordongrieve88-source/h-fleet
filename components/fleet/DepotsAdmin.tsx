@@ -4,12 +4,13 @@ import { useState } from "react";
 import { saveDepot, setDepotActive, createFleetRegion, setFleetRegionActive } from "@/app/(app)/fleet/admin-actions";
 import { Modal, Field, useAction, input, btnPrimary, btnGhost } from "./adminUi";
 
-export type DepotRow = { id: number; name: string; region: string; state: string; isActive: boolean; drivers: number; trucks: number };
+export type DepotRow = { id: number; name: string; region: string; state: string; groupCode: string | null; isActive: boolean; drivers: number; trucks: number };
+export type GroupOpt = { code: string; name: string };
 
 const STATES = ["NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"];
 export type RegionRow = { name: string; isActive: boolean; depots: number };
 
-export function DepotsAdmin({ depots, regions }: { depots: DepotRow[]; regions: RegionRow[] }) {
+export function DepotsAdmin({ depots, regions, groups }: { depots: DepotRow[]; regions: RegionRow[]; groups: GroupOpt[] }) {
   const [editing, setEditing] = useState<DepotRow | "new" | null>(null);
   const [newRegion, setNewRegion] = useState(false);
   const { run, pending } = useAction();
@@ -28,7 +29,7 @@ export function DepotsAdmin({ depots, regions }: { depots: DepotRow[]; regions: 
           <table className="w-full text-sm">
             <thead className="bg-brand-deep text-white">
               <tr>
-                {["Depot", "Region", "State", "Drivers", "Trucks", ""].map((h, i) => (
+                {["Depot", "Region", "State", "Dispatch group", "Drivers", "Trucks", ""].map((h, i) => (
                   <th key={i} className={`px-3 py-2 text-[12px] font-semibold ${i >= 2 && i <= 3 ? "text-center" : "text-left"}`}>
                     {h}
                   </th>
@@ -44,6 +45,9 @@ export function DepotsAdmin({ depots, regions }: { depots: DepotRow[]; regions: 
                   </td>
                   <td className="px-3 py-1.5 text-slate-600">{d.region}</td>
                 <td className="px-3 py-1.5 font-medium text-slate-500">{d.state}</td>
+                <td className="px-3 py-1.5 text-slate-500">
+                  {d.groupCode ? <span className="font-mono text-[12px] font-semibold text-brand-mid">{d.groupCode}</span> : <span className="text-slate-300">—</span>}
+                </td>
                   <td className="px-3 py-1.5 text-center text-slate-500">{d.drivers}</td>
                   <td className="px-3 py-1.5 text-center text-slate-500">{d.trucks}</td>
                   <td className="whitespace-nowrap px-3 py-1.5 text-right">
@@ -91,16 +95,17 @@ export function DepotsAdmin({ depots, regions }: { depots: DepotRow[]; regions: 
         </div>
       </div>
 
-      {editing && <DepotDialog row={editing === "new" ? null : editing} regions={activeRegions} onClose={() => setEditing(null)} />}
+      {editing && <DepotDialog row={editing === "new" ? null : editing} regions={activeRegions} groups={groups} onClose={() => setEditing(null)} />}
       {newRegion && <RegionDialog onClose={() => setNewRegion(false)} />}
     </div>
   );
 }
 
-function DepotDialog({ row, regions, onClose }: { row: DepotRow | null; regions: string[]; onClose: () => void }) {
+function DepotDialog({ row, regions, groups, onClose }: { row: DepotRow | null; regions: string[]; groups: GroupOpt[]; onClose: () => void }) {
   const [name, setName] = useState(row?.name ?? "");
   const [region, setRegion] = useState(row?.region ?? regions[0] ?? "");
   const [state, setState] = useState(row?.state ?? "NSW");
+  const [groupCode, setGroupCode] = useState(row?.groupCode ?? "");
   const { run, pending, error } = useAction();
   return (
     <Modal title={row ? `Edit ${row.name}` : "Add depot"} onClose={onClose}>
@@ -112,6 +117,16 @@ function DepotDialog({ row, regions, onClose }: { row: DepotRow | null; regions:
           {regions.map((r) => (
             <option key={r} value={r}>
               {r}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Dispatch group">
+        <select className={input} value={groupCode} onChange={(e) => setGroupCode(e.target.value)}>
+          <option value="">Unassigned</option>
+          {groups.map((g) => (
+            <option key={g.code} value={g.code}>
+              {g.code} — {g.name}
             </option>
           ))}
         </select>
@@ -134,7 +149,7 @@ function DepotDialog({ row, regions, onClose }: { row: DepotRow | null; regions:
         <button onClick={onClose} className={btnGhost}>
           Cancel
         </button>
-        <button onClick={() => run(() => saveDepot({ id: row?.id, name, regionName: region, state }), onClose)} disabled={pending} className={btnPrimary}>
+        <button onClick={() => run(() => saveDepot({ id: row?.id, name, regionName: region, state, dispatchGroupCode: groupCode || null }), onClose)} disabled={pending} className={btnPrimary}>
           {pending ? "Saving…" : "Save"}
         </button>
       </div>

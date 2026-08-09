@@ -47,9 +47,9 @@ async function retryOnUniqueClash<T>(fn: () => Promise<T>): Promise<T> {
  * double-assignment or a half-saved day.
  */
 export const fleetBoardRepo = {
-  async getBoard(date: Date): Promise<FleetBoardRow[]> {
+  async getBoard(date: Date, group: string | null = null): Promise<FleetBoardRow[]> {
     const saved = await prisma.truckAssignment.findMany({
-      where: { date },
+      where: { date, ...(group === null ? {} : { truck: { depot: { dispatchGroupCode: group } } }) },
       select: { truckId: true, status: true, driverId: true, time: true, workLocation: true },
     });
     if (saved.length > 0) {
@@ -61,13 +61,13 @@ export const fleetBoardRepo = {
         workLocation: a.workLocation,
       }));
     }
-    return this.synthesise(date);
+    return this.synthesise(date, prisma, group);
   },
 
-  async synthesise(date: Date, db: Db = prisma): Promise<FleetBoardRow[]> {
+  async synthesise(date: Date, db: Db = prisma, group: string | null = null): Promise<FleetBoardRow[]> {
     const [trucks, onLeave] = await Promise.all([
       db.truck.findMany({
-        where: { isActive: true },
+        where: { isActive: true, ...(group === null ? {} : { depot: { dispatchGroupCode: group } }) },
         orderBy: [{ region: "asc" }, { sortOrder: "asc" }],
         select: { id: true, defaultDriverId: true },
       }),

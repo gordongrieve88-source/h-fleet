@@ -175,16 +175,17 @@ export async function saveDepot(input: {
   name: string;
   regionName: string;
   state?: string;
+  dispatchGroupCode?: string | null;
 }): Promise<ActionResult> {
   const user = await requireManager();
   try {
     if (!input.name.trim() || !input.regionName) return { ok: false, error: "Name and region are required." };
     const state = (input.state ?? "NSW").trim().toUpperCase() || "NSW";
     if (input.id) {
-      await fleetRepo.updateDepot(input.id, { name: input.name.trim(), regionName: input.regionName, state });
+      await fleetRepo.updateDepot(input.id, { name: input.name.trim(), regionName: input.regionName, state, dispatchGroupCode: input.dispatchGroupCode ?? null });
       await logAction(user, "fleet.depot.update", "Depot", input.id, `Updated depot ${input.name.trim()} (${input.regionName}, ${state})`);
     } else {
-      const row = await fleetRepo.createDepot({ name: input.name.trim(), regionName: input.regionName, state });
+      const row = await fleetRepo.createDepot({ name: input.name.trim(), regionName: input.regionName, state, dispatchGroupCode: input.dispatchGroupCode ?? null });
       await logAction(user, "fleet.depot.create", "Depot", row.id, `Added depot ${row.name} (${input.regionName}, ${state})`);
     }
     refresh();

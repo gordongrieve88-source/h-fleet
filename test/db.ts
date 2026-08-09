@@ -51,6 +51,7 @@ export async function wipeData(): Promise<void> {
   await prisma.driver.deleteMany();
   await prisma.depot.deleteMany();
   await prisma.fleetRegion.deleteMany();
+  await prisma.dispatchGroup.deleteMany();
   await prisma.appUser.deleteMany();
   await prisma.leaveType.deleteMany();
   await prisma.credentialType.deleteMany();

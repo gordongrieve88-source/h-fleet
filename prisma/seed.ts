@@ -133,6 +133,14 @@ async function main() {
   await prisma.depot.deleteMany();
   await prisma.fleetRegion.deleteMany();
 
+  // The dispatch group the Syncrotess roster is printed for. Every current
+  // depot belongs to it; new states get their own group.
+  await prisma.dispatchGroup.upsert({
+    where: { code: "301" },
+    create: { code: "301", name: "NSW Conc", state: "NSW", sortOrder: 1 },
+    update: { name: "NSW Conc", state: "NSW" },
+  });
+
   for (let i = 0; i < FLEET_REGIONS.length; i++) {
     await prisma.fleetRegion.create({ data: { name: FLEET_REGIONS[i], sortOrder: i } });
   }
@@ -159,7 +167,7 @@ async function main() {
   const depotIdByName: Record<string, number> = {};
   for (let i = 0; i < depotList.length; i++) {
     const row = await prisma.depot.create({
-      data: { name: depotList[i].name, regionName: depotList[i].region, sortOrder: i },
+      data: { name: depotList[i].name, regionName: depotList[i].region, state: "NSW", dispatchGroupCode: "301", sortOrder: i },
     });
     depotIdByName[depotList[i].name] = row.id;
   }

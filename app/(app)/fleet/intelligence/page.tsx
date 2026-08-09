@@ -5,6 +5,7 @@ import { isInsightsRole } from "@/lib/auth/roles";
 import { fleetBoardRepo, fleetRepo, integrationRepo } from "@/lib/db/repositories";
 import { availabilityByDay, mean, plannedVsActual, punctuality, truckReliability } from "@/lib/wfm/analytics";
 import { addDaysUTC, fmtDate, parseYmdOrNull, todayUTC, ymd } from "@/lib/wfm/date";
+import { getViewGroup } from "@/lib/fleet/view-group";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Kpi } from "@/components/fleet/Kpi";
@@ -34,7 +35,7 @@ export default async function FleetIntelligencePage({
 
   const [rows, trucks, telemetry, rosteredTimes] = await Promise.all([
     fleetBoardRepo.assignmentsInRange(start, end),
-    fleetRepo.listAllTrucks(),
+    fleetRepo.listAllTrucks(await getViewGroup()),
     integrationRepo.telemetryForRange(start, end),
     fleetBoardRepo.startTimesInRange(start, end),
   ]);

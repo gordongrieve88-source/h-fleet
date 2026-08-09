@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isEditRole } from "@/lib/auth/roles";
 import { fleetRepo, selfServiceRepo } from "@/lib/db/repositories";
+import { getViewGroup } from "@/lib/fleet/view-group";
 import { PageHeader } from "@/components/PageHeader";
 import { DriversAdmin } from "@/components/fleet/DriversAdmin";
 
@@ -12,9 +13,10 @@ export default async function FleetDriversPage({ searchParams }: { searchParams:
   if (!isEditRole(user?.role)) redirect("/fleet");
 
   const { q } = await searchParams;
+  const group = await getViewGroup();
   const [drivers, depots, users] = await Promise.all([
-    fleetRepo.listAllDrivers(),
-    fleetRepo.listDepots(),
+    fleetRepo.listAllDrivers(group),
+    fleetRepo.listDepots(group),
     selfServiceRepo.listLinkableUsers(),
   ]);
 
