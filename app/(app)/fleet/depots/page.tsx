@@ -37,7 +37,7 @@ export default async function FleetDepotsPage() {
           trucks: d._count.trucks,
         }))}
         regions={regions.map((r) => ({ name: r.name, isActive: r.isActive, depots: r._count.depots }))}
-        groups={groups.filter((g) => g.isActive).map((g) => ({ code: g.code, name: g.name }))}
+        groups={groups.map((g) => ({ code: g.code, name: g.name, isActive: g.isActive }))}
       />
     </div>
   );

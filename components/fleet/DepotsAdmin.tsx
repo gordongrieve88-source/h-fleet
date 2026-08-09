@@ -5,7 +5,7 @@ import { saveDepot, setDepotActive, createFleetRegion, setFleetRegionActive } fr
 import { Modal, Field, useAction, input, btnPrimary, btnGhost } from "./adminUi";
 
 export type DepotRow = { id: number; name: string; region: string; state: string; groupCode: string | null; isActive: boolean; drivers: number; trucks: number };
-export type GroupOpt = { code: string; name: string };
+export type GroupOpt = { code: string; name: string; isActive: boolean };
 
 const STATES = ["NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"];
 export type RegionRow = { name: string; isActive: boolean; depots: number };
@@ -122,13 +122,19 @@ function DepotDialog({ row, regions, groups, onClose }: { row: DepotRow | null; 
         </select>
       </Field>
       <Field label="Dispatch group">
+        {/* A hidden group is off the menu for everyone else, but stays listed
+            for the depot already in it — otherwise opening this dialog would
+            silently unassign it on save. */}
         <select className={input} value={groupCode} onChange={(e) => setGroupCode(e.target.value)}>
           <option value="">Unassigned</option>
-          {groups.map((g) => (
-            <option key={g.code} value={g.code}>
-              {g.code} — {g.name}
-            </option>
-          ))}
+          {groups
+            .filter((g) => g.isActive || g.code === row?.groupCode)
+            .map((g) => (
+              <option key={g.code} value={g.code}>
+                {g.code} — {g.name}
+                {g.isActive ? "" : " (hidden)"}
+              </option>
+            ))}
         </select>
       </Field>
       <Field label="State">

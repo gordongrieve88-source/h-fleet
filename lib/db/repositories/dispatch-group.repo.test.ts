@@ -104,6 +104,41 @@ describe("the selector only offers groups that have depots", () => {
   });
 });
 
+describe("managing groups from Setup", () => {
+  it("adds a group, and it only reaches the selector once a depot joins it", async () => {
+    await fleetRepo.createDispatchGroup({ code: "302", name: "QLD Conc", state: "QLD", sortOrder: 3 });
+    expect((await fleetRepo.listAllDispatchGroups()).map((g) => g.code)).toEqual(["301", "303", "302"]);
+    expect((await availableGroups()).map((g) => g.code)).not.toContain("302");
+  });
+
+  it("renames a group without touching its depots", async () => {
+    await fleetRepo.updateDispatchGroup("301", { name: "NSW Concrete", state: "NSW", sortOrder: 1 });
+    expect((await availableGroups()).find((g) => g.code === "301")).toMatchObject({ name: "NSW Concrete", depots: 1 });
+    expect(await fleetRepo.listDepots("301")).toHaveLength(1);
+  });
+
+  it("hiding a group drops it from the selector but keeps its depots attached", async () => {
+    await fleetRepo.setDispatchGroupActive("301", false);
+    expect((await availableGroups()).map((g) => g.code)).toEqual(["303"]);
+    expect(await prisma.depot.count({ where: { dispatchGroupCode: "301" } })).toBe(1);
+  });
+
+  it("removes an unused group", async () => {
+    await fleetRepo.createDispatchGroup({ code: "302", name: "QLD Conc", state: "QLD" });
+    await fleetRepo.deleteDispatchGroup("302");
+    expect((await fleetRepo.listAllDispatchGroups()).map((g) => g.code)).toEqual(["301", "303"]);
+  });
+
+  it("refuses to remove a group that still has depots, rather than orphaning them", async () => {
+    await expect(fleetRepo.deleteDispatchGroup("301")).rejects.toThrow(/still has 1 depot/);
+    expect(await prisma.depot.count({ where: { dispatchGroupCode: "301" } })).toBe(1);
+  });
+
+  it("refuses to remove a group that doesn't exist", async () => {
+    await expect(fleetRepo.deleteDispatchGroup("999")).rejects.toThrow(/Unknown dispatch group/);
+  });
+});
+
 describe("the catalog hides regions with nothing in them", () => {
   it("only offers regions that have depots in the selected group", async () => {
     expect((await loadFleetCatalog("301")).regions).toEqual(["Metro"]);

@@ -100,14 +100,35 @@ export const fleetRepo = {
       include: { _count: { select: { depots: true } } },
     });
   },
-  createDispatchGroup(d: { code: string; name: string; state: string }) {
+  createDispatchGroup(d: { code: string; name: string; state: string; sortOrder?: number }) {
     return prisma.dispatchGroup.create({ data: d });
   },
-  updateDispatchGroup(code: string, d: { name: string; state: string }) {
+  updateDispatchGroup(code: string, d: { name: string; state: string; sortOrder?: number }) {
     return prisma.dispatchGroup.update({ where: { code }, data: d });
   },
   setDispatchGroupActive(code: string, isActive: boolean) {
     return prisma.dispatchGroup.update({ where: { code }, data: { isActive } });
+  },
+  /**
+   * Delete a group outright. Refuses while depots still point at it — the
+   * relation is onDelete: SetNull, so deleting anyway would quietly orphan
+   * them out of every group view instead of failing loudly. Move the depots
+   * first, or deactivate the group to keep the link.
+   */
+  async deleteDispatchGroup(code: string) {
+    const group = await prisma.dispatchGroup.findUnique({
+      where: { code },
+      include: { _count: { select: { depots: true } } },
+    });
+    if (!group) throw new Error(`Unknown dispatch group ${code}.`);
+    if (group._count.depots > 0) {
+      throw new Error(
+        `${code} still has ${group._count.depots} depot${group._count.depots === 1 ? "" : "s"}. ` +
+          `Move them to another group first, or deactivate ${code} instead.`,
+      );
+    }
+    await prisma.dispatchGroup.delete({ where: { code } });
+    return group;
   },
 
   listAllRegions() {

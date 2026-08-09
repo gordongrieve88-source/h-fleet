@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isManagerRole } from "@/lib/auth/roles";
-import { referenceRepo, complianceRepo } from "@/lib/db/repositories";
+import { referenceRepo, complianceRepo, fleetRepo } from "@/lib/db/repositories";
 import { PageHeader, Card } from "@/components/PageHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { StatesPicker } from "@/components/StatesPicker";
@@ -16,21 +16,27 @@ import {
   deleteCredentialTypeAction,
   createHolidayAction,
   deleteHolidayAction,
+  createDispatchGroupAction,
+  updateDispatchGroupAction,
+  toggleDispatchGroupActive,
+  deleteDispatchGroupAction,
 } from "./actions";
 
 const inputCls =
   "rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 focus:border-brand-mid focus:outline-none focus:ring-1 focus:ring-brand-mid";
 const saveBtn = "rounded-lg bg-brand-mid px-3 py-1 text-xs font-semibold text-white hover:bg-brand-deep";
+const STATES = ["NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"];
 
 export default async function SetupPage() {
   const user = await getCurrentUser();
   if (!isManagerRole(user?.role)) redirect("/fleet");
 
-  const [leaveTypes, holidays, credentialTypes, truckTypes] = await Promise.all([
+  const [leaveTypes, holidays, credentialTypes, truckTypes, groups] = await Promise.all([
     referenceRepo.listAllLeaveTypes(),
     referenceRepo.listAllHolidays(),
     complianceRepo.listAllTypes(),
     complianceRepo.truckTypes(),
+    fleetRepo.listAllDispatchGroups(),
   ]);
   const categories = [...new Set(credentialTypes.map((c) => c.category))];
   const todayKey = ymd(todayUTC());
@@ -40,8 +46,87 @@ export default async function SetupPage() {
     <div className="space-y-4">
       <PageHeader
         title="Setup"
-        description="Leave types and public holidays. Changes here flow straight through to the board, planner and reports — nothing is hardcoded."
+        description="Dispatch groups, leave types, credentials and public holidays. Changes here flow straight through to the board, planner and reports — nothing is hardcoded."
       />
+
+      {/* Dispatch groups */}
+      <Card title="Dispatch groups" count={groups.length}>
+        <ul className="divide-y divide-slate-50">
+          {groups.map((g) => (
+            <li key={g.code} className={`px-4 py-1.5 ${g.isActive ? "" : "opacity-50"}`}>
+              <form action={updateDispatchGroupAction} className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="hidden" name="code" value={g.code} />
+                <span className="w-12 font-mono font-semibold text-brand-mid">{g.code}</span>
+                <input name="name" defaultValue={g.name} className={`${inputCls} min-w-48 flex-1`} />
+                <select name="state" defaultValue={g.state} className={inputCls} title="Where the group operates">
+                  {STATES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <input name="sortOrder" type="number" defaultValue={g.sortOrder} className={`${inputCls} w-16`} title="Sort order" />
+                <SubmitButton className={saveBtn} savedToast={`${g.code} saved`}>
+                  Save
+                </SubmitButton>
+              </form>
+              <div className="mt-0.5 flex items-center gap-3">
+                <form action={toggleDispatchGroupActive}>
+                  <input type="hidden" name="code" value={g.code} />
+                  <input type="hidden" name="active" value={g.isActive ? "false" : "true"} />
+                  <SubmitButton
+                    className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    savedToast={g.isActive ? `${g.code} hidden — depots keep their group` : `${g.code} reactivated`}
+                  >
+                    {g.isActive ? "Hide" : "Reactivate"}
+                  </SubmitButton>
+                </form>
+                {g._count.depots === 0 ? (
+                  <form action={deleteDispatchGroupAction}>
+                    <input type="hidden" name="code" value={g.code} />
+                    <SubmitButton
+                      className="text-[11px] text-rose-600 hover:underline"
+                      savedToast={`${g.code} removed`}
+                      confirmMessage={`Remove dispatch group ${g.code} (${g.name})? No depots use it, so nothing else is affected.`}
+                    >
+                      Remove
+                    </SubmitButton>
+                  </form>
+                ) : (
+                  <span className="text-[11px] text-slate-300" title="Move its depots to another group before removing it">
+                    in use — can&apos;t remove
+                  </span>
+                )}
+                <span className="text-[11px] text-slate-400">
+                  {g._count.depots > 0 ? `${g._count.depots} depot${g._count.depots === 1 ? "" : "s"}` : "no depots yet"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <form action={createDispatchGroupAction} className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          ＋ Add group
+          <input name="code" placeholder="e.g. 305" className={`${inputCls} w-24 font-mono`} />
+          <input name="name" placeholder="Display name, e.g. TAS Conc" className={`${inputCls} min-w-48 flex-1`} />
+          <select name="state" defaultValue="NSW" className={inputCls}>
+            {STATES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <input name="sortOrder" type="number" defaultValue={50} className={`${inputCls} w-16`} />
+          <SubmitButton className={saveBtn} savedToast="Dispatch group added">
+            Add
+          </SubmitButton>
+        </form>
+        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+          The allocation system&apos;s grouping, and what the view selector in the top bar switches between. Assign depots
+          to a group on <b>Fleet → Depots</b>; a group with no depots stays out of the selector until it has some. The code
+          is the identity Syncrotess prints, so it can&apos;t be edited — add the right one and move the depots across.
+          Hiding a group keeps its depots attached; removing one is only offered while nothing uses it.
+        </p>
+      </Card>
 
       {/* Leave types */}
       <Card title="Leave types" count={leaveTypes.length}>

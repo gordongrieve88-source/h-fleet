@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/auth";
-import { referenceRepo, complianceRepo } from "@/lib/db/repositories";
+import { referenceRepo, complianceRepo, fleetRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 
 function refresh() {
@@ -10,6 +10,16 @@ function refresh() {
   revalidatePath("/fleet");
   revalidatePath("/fleet/leave");
   revalidatePath("/fleet/compliance");
+}
+
+/** Dispatch groups drive the view selector, which sits on every fleet screen. */
+function refreshGroups() {
+  refresh();
+  revalidatePath("/fleet/depots");
+  revalidatePath("/fleet/drivers");
+  revalidatePath("/fleet/trucks");
+  revalidatePath("/fleet/week");
+  revalidatePath("/fleet/reports");
 }
 
 export async function createLeaveTypeAction(formData: FormData): Promise<void> {
@@ -114,6 +124,66 @@ export async function toggleCredentialTypeActive(formData: FormData): Promise<vo
   await complianceRepo.setTypeActive(code, active);
   await logAction(user, "setup.credentialTypeToggle", "CredentialType", null, `${active ? "Reactivated" : "Hid"} credential type ${code}`);
   refresh();
+}
+
+// ---- dispatch groups --------------------------------------------------------
+// The allocation system's grouping — one per state today (300 SA, 301 NSW,
+// 302 QLD, 303 VIC, 304 WA). Depots are assigned to a group on the Depots
+// screen; the code is the identity Syncrotess prints, so it can't be edited
+// after the fact — add the right one and move the depots across.
+
+export async function createDispatchGroupAction(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code") ?? "").trim().toUpperCase();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!code || !name) return;
+  await fleetRepo.createDispatchGroup({
+    code,
+    name,
+    state: String(formData.get("state") ?? "NSW").trim().toUpperCase() || "NSW",
+    sortOrder: Number(formData.get("sortOrder") ?? 50) || 50,
+  });
+  await logAction(user, "setup.dispatchGroupCreate", "DispatchGroup", null, `Added dispatch group ${code} (${name})`);
+  refreshGroups();
+}
+
+export async function updateDispatchGroupAction(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code"));
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return;
+  await fleetRepo.updateDispatchGroup(code, {
+    name,
+    state: String(formData.get("state") ?? "NSW").trim().toUpperCase() || "NSW",
+    sortOrder: Number(formData.get("sortOrder") ?? 50) || 50,
+  });
+  await logAction(user, "setup.dispatchGroupUpdate", "DispatchGroup", null, `Updated dispatch group ${code} (${name})`);
+  refreshGroups();
+}
+
+export async function toggleDispatchGroupActive(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code"));
+  const active = String(formData.get("active")) === "true";
+  await fleetRepo.setDispatchGroupActive(code, active);
+  await logAction(
+    user,
+    "setup.dispatchGroupToggle",
+    "DispatchGroup",
+    null,
+    `${active ? "Reactivated" : "Hid"} dispatch group ${code}`,
+  );
+  refreshGroups();
+}
+
+/** Only reachable for a group with no depots — the repo enforces that too. */
+export async function deleteDispatchGroupAction(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code") ?? "").trim();
+  if (!code) return;
+  const group = await fleetRepo.deleteDispatchGroup(code);
+  await logAction(user, "setup.dispatchGroupDelete", "DispatchGroup", null, `Removed dispatch group ${code} (${group.name})`);
+  refreshGroups();
 }
 
 export async function createHolidayAction(formData: FormData): Promise<void> {
