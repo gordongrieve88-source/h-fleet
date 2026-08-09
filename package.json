@@ -14,7 +14,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
-    "setup": "prisma migrate deploy && tsx prisma/seed.ts",
+    "setup": "prisma generate && prisma migrate deploy && tsx prisma/seed.ts",
     "demo": "npm run setup && next dev -p 3002",
     "demo:lan": "npm run setup && next dev -H 0.0.0.0 -p 3002"
   },

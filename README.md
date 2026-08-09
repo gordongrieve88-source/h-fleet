@@ -12,11 +12,15 @@ extension — same shell, same seams.
 
 ```bash
 npm install
-npm run demo     # applies migrations, seeds the real fleet data, starts the dev server
+npm run demo     # generates the client, applies migrations, seeds the real fleet, starts the dev server
 npm test         # unit + repository tests (Vitest); CI runs these on every push
 ```
 
 Open http://localhost:3002 (H-Fleet runs on **port 3002**; H-Crew owns 3001).
+
+After pulling changes, run `npm run demo` again rather than `npm run dev`. The
+generated Prisma client isn't committed, so a bare `dev` runs against a stale
+one and any page touching a new table fails.
 
 ### On a phone or tablet
 

@@ -85,8 +85,11 @@ Ordered so the earliest items unblock the most.
 
 ```bash
 npm install
-npm run demo          # migrate + seed the real fleet, start on http://localhost:3002
+npm run demo          # generate + migrate + seed the real fleet, start on http://localhost:3002
 ```
+
+Use `npm run demo` after every `git pull`, not `npm run dev` — the generated Prisma client
+isn't in git, so a bare `dev` runs against a stale one and new screens fail to load.
 
 Sign in is the switcher at the bottom of the sidebar. **Gordon Grieve = Manager (full access)**;
 there's also a scoped supervisor (Greenacre + Prestons only) and a linked driver account that
