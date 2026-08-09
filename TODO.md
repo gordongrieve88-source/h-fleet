@@ -56,6 +56,11 @@ Ordered so the earliest items unblock the most.
 - [ ] **Turn the sample providers off** (`PEOPLE_PROVIDER=off`, `TELEMATICS_PROVIDER=off`) once
       the demo is done. They generate clearly-labelled demonstration data — safe to show, not
       safe to decide on.
+- [ ] **Put App Service authentication in front of the Azure demo** before sharing the link
+      (`deploy/AZURE.md`). The demo sign-in switcher is a dropdown, not authentication — anyone
+      with the URL is a Manager. Restricting it to the company tenant is five minutes in the
+      portal and needs no code. The data there is invented, so this is about not leaving an
+      open door, not about exposure.
 
 ---
 

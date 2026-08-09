@@ -23,6 +23,14 @@ After pulling changes, run **both** again — `npm install && npm run demo` — 
 committed, so a bare `dev` runs against whatever your last install left behind:
 a new dependency shows up as `Module not found`, a new table as a failed query.
 
+### Putting a demo somewhere people can reach
+
+[`deploy/AZURE.md`](deploy/AZURE.md) — Azure App Service, one manual GitHub
+Action. It runs with `SEED_ANONYMISE=1`, which builds the same fleet (13
+depots, 148 trucks, 194 drivers, same leave patterns) staffed by **invented
+people**: the real drivers are real employees, and their names don't belong on
+a URL. The startup script refuses to seed without that flag.
+
 ### On a phone or tablet
 
 The board is built for the yard, so it's worth trying on a real device. Run

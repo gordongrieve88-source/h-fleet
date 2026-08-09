@@ -14,11 +14,20 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "../generated/prisma/client";
 import {
   REGIONS as FLEET_REGIONS,
-  DRIVERS as FLEET_DRIVERS,
+  DRIVERS as REAL_DRIVERS,
   TRUCKS as FLEET_TRUCKS,
   LEAVE as FLEET_LEAVE,
   SEED_DAY as FLEET_SEED_DAY,
 } from "./seed-data/fleet-data";
+import { anonymiseDrivers, anonymiseRequested } from "./seed-data/anonymise";
+
+/**
+ * The real fleet's drivers are real employees. Anywhere a stranger could reach
+ * the app, seed invented people instead — same fleet, same shape, nobody's
+ * name. See prisma/seed-data/anonymise.ts.
+ */
+const ANONYMISED = anonymiseRequested();
+const FLEET_DRIVERS = ANONYMISED ? anonymiseDrivers(REAL_DRIVERS) : REAL_DRIVERS;
 
 const adapter = new PrismaBetterSqlite3({
   url: process.env.DATABASE_URL ?? "file:./prisma/dev.db",
@@ -124,7 +133,13 @@ async function main() {
   const fleetLeaveCode = (typeName: string) =>
     typeName.toLowerCase().startsWith("annual") ? "AL" : typeName.toLowerCase().startsWith("personal") ? "PL" : "OS";
 
-  console.log("Seeding fleet data…");
+  // Say which it is, every time. The two databases look identical on screen,
+  // and the difference is whether real employees' names are in it.
+  console.log(
+    ANONYMISED
+      ? "Seeding fleet data… PEOPLE ANONYMISED (SEED_ANONYMISE set) — invented names, synthetic employee numbers."
+      : "Seeding fleet data… REAL PEOPLE — local use only. Set SEED_ANONYMISE=1 for anywhere reachable.",
+  );
   await prisma.truckAssignment.deleteMany();
   await prisma.driverLeave.deleteMany();
   await prisma.driverEntitlement.deleteMany();

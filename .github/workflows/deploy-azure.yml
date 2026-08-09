@@ -1,0 +1,49 @@
+# Deploys the H-Fleet DEMO instance to Azure App Service.
+#
+# Manual only (Actions → Deploy demo to Azure → Run workflow). Deploying is an
+# outward-facing act; it shouldn't happen as a side effect of a commit.
+#
+# One-time setup is in deploy/AZURE.md — create the Web App, add the
+# AZURE_WEBAPP_NAME variable and AZURE_WEBAPP_PUBLISH_PROFILE secret.
+name: Deploy demo to Azure
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: demo
+    steps:
+      - uses: actions/checkout@v4
+
+      # Must match the Web App's Node version: better-sqlite3 is a native
+      # module, and a client built against a different ABI won't load there.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Checks
+        run: npm run lint && npm run typecheck && npm test
+
+      - name: Build
+        run: npm run build
+
+      # Deliberately NOT pruning dev dependencies: startup.sh runs
+      # `prisma migrate deploy` and `tsx prisma/seed.ts` on the Web App, and
+      # both live in devDependencies. A pruned upload boots into "prisma: not
+      # found". The extra megabytes cost nothing on a demo instance.
+
+      - name: Deploy
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
