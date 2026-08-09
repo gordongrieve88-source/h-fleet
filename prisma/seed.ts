@@ -136,13 +136,21 @@ async function main() {
   // option in the selector after a re-seed.
   await prisma.dispatchGroup.deleteMany();
 
-  // The dispatch group the Syncrotess roster is printed for. Every current
-  // depot belongs to it; new states get their own group.
-  await prisma.dispatchGroup.upsert({
-    where: { code: "301" },
-    create: { code: "301", name: "NSW Conc", state: "NSW", sortOrder: 1 },
-    update: { name: "NSW Conc", state: "NSW" },
-  });
+  // The real dispatch group codes, one per state. 301 is the group the
+  // Syncrotess roster we have is printed for and owns every current depot; the
+  // rest are seeded ahead of their data so depots can be assigned to them as
+  // they arrive. A group with no depots stays out of the view selector until it
+  // has some, so the empty ones cost nothing.
+  const dispatchGroups = [
+    { code: "300", name: "SA Conc", state: "SA", sortOrder: 1 },
+    { code: "301", name: "NSW Conc", state: "NSW", sortOrder: 2 },
+    { code: "302", name: "QLD Conc", state: "QLD", sortOrder: 3 },
+    { code: "303", name: "VIC Conc", state: "VIC", sortOrder: 4 },
+    { code: "304", name: "WA Conc", state: "WA", sortOrder: 5 },
+  ];
+  for (const g of dispatchGroups) {
+    await prisma.dispatchGroup.upsert({ where: { code: g.code }, create: g, update: g });
+  }
 
   for (let i = 0; i < FLEET_REGIONS.length; i++) {
     await prisma.fleetRegion.create({ data: { name: FLEET_REGIONS[i], sortOrder: i } });

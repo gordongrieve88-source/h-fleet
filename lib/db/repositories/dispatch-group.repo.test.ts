@@ -4,6 +4,7 @@ import { applyMigrations, wipeData } from "@/test/db";
 import { fleetRepo } from "./fleet.repo";
 import { fleetBoardRepo } from "./fleet-board.repo";
 import { loadFleetCatalog } from "@/lib/fleet/catalog";
+import { availableGroups } from "@/lib/fleet/view-group";
 import { dateFromKey } from "@/lib/wfm/date";
 
 /**
@@ -19,13 +20,13 @@ beforeEach(async () => {
   await prisma.dispatchGroup.createMany({
     data: [
       { code: "301", name: "NSW Conc", state: "NSW", sortOrder: 1 },
-      { code: "401", name: "VIC Conc", state: "VIC", sortOrder: 2 },
+      { code: "303", name: "VIC Conc", state: "VIC", sortOrder: 2 },
     ],
   });
   await prisma.fleetRegion.createMany({ data: [{ name: "Metro" }, { name: "South" }] });
 
   const nsw = await prisma.depot.create({ data: { name: "Greenacre", regionName: "Metro", state: "NSW", dispatchGroupCode: "301" } });
-  const vic = await prisma.depot.create({ data: { name: "Laverton", regionName: "South", state: "VIC", dispatchGroupCode: "401" } });
+  const vic = await prisma.depot.create({ data: { name: "Laverton", regionName: "South", state: "VIC", dispatchGroupCode: "303" } });
   const orphan = await prisma.depot.create({ data: { name: "Unassigned Yard", regionName: "Metro", state: "NSW" } });
 
   const d1 = await prisma.driver.create({ data: { name: "NSW Driver", employeeNo: "N1", depotId: nsw.id } });
@@ -50,9 +51,9 @@ describe("master data narrows to the selected group", () => {
     expect((await fleetRepo.listDrivers("301")).map((d) => d.name)).toEqual(["NSW Driver"]);
   });
 
-  it("selecting 401 shows only Victoria", async () => {
-    expect((await fleetRepo.listTrucks("401")).map((t) => t.id)).toEqual(["VIC1"]);
-    expect((await fleetRepo.listDrivers("401")).map((d) => d.name)).toEqual(["VIC Driver"]);
+  it("selecting 303 shows only Victoria", async () => {
+    expect((await fleetRepo.listTrucks("303")).map((t) => t.id)).toEqual(["VIC1"]);
+    expect((await fleetRepo.listDrivers("303")).map((d) => d.name)).toEqual(["VIC Driver"]);
   });
 
   it("a depot with no group is only visible in the all-groups view", async () => {
@@ -61,22 +62,22 @@ describe("master data narrows to the selected group", () => {
   });
 
   it("admin lists narrow too", async () => {
-    expect(await fleetRepo.listAllTrucks("401")).toHaveLength(1);
-    expect(await fleetRepo.listAllDrivers("401")).toHaveLength(1);
-    expect(await fleetRepo.listAllDepots("401")).toHaveLength(1);
+    expect(await fleetRepo.listAllTrucks("303")).toHaveLength(1);
+    expect(await fleetRepo.listAllDrivers("303")).toHaveLength(1);
+    expect(await fleetRepo.listAllDepots("303")).toHaveLength(1);
   });
 });
 
 describe("the board narrows to the selected group", () => {
   it("roll-forward only synthesises that group's trucks", async () => {
     expect((await fleetBoardRepo.getBoard(DAY, "301")).map((r) => r.truck).sort()).toEqual(["NSW1", "NSW2"]);
-    expect((await fleetBoardRepo.getBoard(DAY, "401")).map((r) => r.truck)).toEqual(["VIC1"]);
+    expect((await fleetBoardRepo.getBoard(DAY, "303")).map((r) => r.truck)).toEqual(["VIC1"]);
     expect(await fleetBoardRepo.getBoard(DAY)).toHaveLength(3);
   });
 
   it("a saved day is filtered the same way", async () => {
     await fleetBoardRepo.materialise(DAY, null); // saves all three trucks
-    expect((await fleetBoardRepo.getBoard(DAY, "401")).map((r) => r.truck)).toEqual(["VIC1"]);
+    expect((await fleetBoardRepo.getBoard(DAY, "303")).map((r) => r.truck)).toEqual(["VIC1"]);
     expect(await fleetBoardRepo.getBoard(DAY)).toHaveLength(3);
   });
 
@@ -86,10 +87,27 @@ describe("the board narrows to the selected group", () => {
   });
 });
 
+describe("the selector only offers groups that have depots", () => {
+  it("hides a group seeded ahead of its data, and shows it once a depot joins", async () => {
+    await prisma.dispatchGroup.create({ data: { code: "304", name: "WA Conc", state: "WA", sortOrder: 5 } });
+    expect((await availableGroups()).map((g) => g.code)).toEqual(["301", "303"]);
+
+    await prisma.depot.create({ data: { name: "Canning Vale", regionName: "South", state: "WA", dispatchGroupCode: "304" } });
+    expect((await availableGroups()).map((g) => g.code)).toEqual(["301", "303", "304"]);
+  });
+
+  it("counts each group's depots", async () => {
+    expect(await availableGroups()).toEqual([
+      { code: "301", name: "NSW Conc", state: "NSW", depots: 1 },
+      { code: "303", name: "VIC Conc", state: "VIC", depots: 1 },
+    ]);
+  });
+});
+
 describe("the catalog hides regions with nothing in them", () => {
   it("only offers regions that have depots in the selected group", async () => {
     expect((await loadFleetCatalog("301")).regions).toEqual(["Metro"]);
-    expect((await loadFleetCatalog("401")).regions).toEqual(["South"]);
+    expect((await loadFleetCatalog("303")).regions).toEqual(["South"]);
     expect((await loadFleetCatalog()).regions.sort()).toEqual(["Metro", "South"]);
   });
 });

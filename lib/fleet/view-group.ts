@@ -31,10 +31,15 @@ export async function getViewGroup(): Promise<string | null> {
   return exists > 0 ? raw : null;
 }
 
-/** Groups worth offering in the selector, with how many depots each runs. */
+/**
+ * Groups worth OFFERING in the selector: active, and actually running depots.
+ * A group seeded ahead of its data would otherwise sit there as a dead option
+ * that empties every screen when picked. Depots admin lists all of them, so
+ * you can still assign depots to a group before it has any.
+ */
 export async function availableGroups(): Promise<DispatchGroupVM[]> {
   const rows = await prisma.dispatchGroup.findMany({
-    where: { isActive: true },
+    where: { isActive: true, depots: { some: {} } },
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
     include: { _count: { select: { depots: true } } },
   });
