@@ -88,8 +88,9 @@ npm install
 npm run demo          # generate + migrate + seed the real fleet, start on http://localhost:3002
 ```
 
-Use `npm run demo` after every `git pull`, not `npm run dev` — the generated Prisma client
-isn't in git, so a bare `dev` runs against a stale one and new screens fail to load.
+Run `npm install && npm run demo` after every `git pull`, not `npm run dev` — neither
+`node_modules` nor the generated Prisma client is in git, so a bare `dev` misses new
+dependencies (`Module not found`) and new tables (failed queries).
 
 Sign in is the switcher at the bottom of the sidebar. **Gordon Grieve = Manager (full access)**;
 there's also a scoped supervisor (Greenacre + Prestons only) and a linked driver account that

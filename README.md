@@ -18,9 +18,10 @@ npm test         # unit + repository tests (Vitest); CI runs these on every push
 
 Open http://localhost:3002 (H-Fleet runs on **port 3002**; H-Crew owns 3001).
 
-After pulling changes, run `npm run demo` again rather than `npm run dev`. The
-generated Prisma client isn't committed, so a bare `dev` runs against a stale
-one and any page touching a new table fails.
+After pulling changes, run **both** again — `npm install && npm run demo` — not
+`npm run dev`. Neither `node_modules` nor the generated Prisma client is
+committed, so a bare `dev` runs against whatever your last install left behind:
+a new dependency shows up as `Module not found`, a new table as a failed query.
 
 ### On a phone or tablet
 
