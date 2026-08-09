@@ -1,0 +1,8 @@
+{
+  // VS Code offers these on first open. Nothing here is required to run the app.
+  "recommendations": [
+    "Prisma.prisma",
+    "bradlc.vscode-tailwindcss",
+    "dbaeumer.vscode-eslint"
+  ]
+}
