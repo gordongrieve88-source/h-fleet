@@ -169,6 +169,35 @@ export async function setTruckActive(id: string, isActive: boolean): Promise<Act
   }
 }
 
+// ---- truck properties -------------------------------------------------------
+/** The property panel for one truck's edit dialog. */
+export async function loadTruckProperties(truckId: string) {
+  await requireEdit();
+  return fleetRepo.truckProperties(truckId);
+}
+
+/** Tick or untick one property on a truck. */
+export async function setTruckProperty(truckId: string, propertyCode: string, held: boolean): Promise<ActionResult> {
+  const user = await requireEdit();
+  try {
+    const truck = await fleetRepo.getTruck(truckId);
+    if (!truck) return { ok: false, error: "Unknown truck." };
+    await requireEditForDepot(truck.depotId, user);
+    await fleetRepo.setTruckProperty(truckId, propertyCode, held);
+    await logAction(
+      user,
+      "fleet.truck.property",
+      "TruckProperty",
+      null,
+      `${held ? "Ticked" : "Unticked"} ${propertyCode} on truck ${truckId}`,
+    );
+    revalidatePath("/fleet/trucks");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 // ---- depots (org structure — managers only) ---------------------------------
 export async function saveDepot(input: {
   id?: number;

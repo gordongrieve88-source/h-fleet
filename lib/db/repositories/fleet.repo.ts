@@ -77,6 +77,62 @@ export const fleetRepo = {
     return prisma.truck.findUnique({ where: { id }, include: { depot: true } });
   },
 
+  // ---- truck properties -----------------------------------------------------
+  // The tick boxes under each truck's setup. Catalog managed in Setup; ticked
+  // per truck on the Trucks screen.
+  listAllTruckProperties() {
+    return prisma.truckProperty.findMany({
+      orderBy: { sortOrder: "asc" },
+      include: { _count: { select: { trucks: true } } },
+    });
+  },
+  async createTruckProperty(code: string, name: string) {
+    const max = await prisma.truckProperty.aggregate({ _max: { sortOrder: true } });
+    return prisma.truckProperty.create({ data: { code, name, sortOrder: (max._max.sortOrder ?? 0) + 1 } });
+  },
+  updateTruckProperty(code: string, d: { name: string; sortOrder?: number }) {
+    return prisma.truckProperty.update({ where: { code }, data: d });
+  },
+  setTruckPropertyActive(code: string, isActive: boolean) {
+    return prisma.truckProperty.update({ where: { code }, data: { isActive } });
+  },
+  /** Delete a property and every truck's tick of it. */
+  async deleteTruckProperty(code: string) {
+    const property = await prisma.truckProperty.findUnique({
+      where: { code },
+      include: { _count: { select: { trucks: true } } },
+    });
+    if (!property) throw new Error(`Unknown truck property ${code}.`);
+    await prisma.truckProperty.delete({ where: { code } });
+    return { name: property.name, tickedBy: property._count.trucks };
+  },
+  /**
+   * The property panel for one truck: every offerable property (active, plus
+   * inactive ones this truck already carries — hiding a property shouldn't
+   * silently untick it) with whether this truck has it.
+   */
+  async truckProperties(truckId: string) {
+    const [all, mine] = await Promise.all([
+      prisma.truckProperty.findMany({ orderBy: { sortOrder: "asc" } }),
+      prisma.truckOnProperty.findMany({ where: { truckId }, select: { propertyCode: true } }),
+    ]);
+    const held = new Set(mine.map((m) => m.propertyCode));
+    return all
+      .filter((p) => p.isActive || held.has(p.code))
+      .map((p) => ({ code: p.code, name: p.name, isActive: p.isActive, held: held.has(p.code) }));
+  },
+  async setTruckProperty(truckId: string, propertyCode: string, held: boolean) {
+    if (held) {
+      await prisma.truckOnProperty.upsert({
+        where: { truckId_propertyCode: { truckId, propertyCode } },
+        create: { truckId, propertyCode },
+        update: {},
+      });
+    } else {
+      await prisma.truckOnProperty.deleteMany({ where: { truckId, propertyCode } });
+    }
+  },
+
   listAllDepots(group: Group = null) {
     return prisma.depot.findMany({
       where: inGroup(group),

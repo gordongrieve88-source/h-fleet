@@ -20,6 +20,10 @@ import {
   updateDispatchGroupAction,
   toggleDispatchGroupActive,
   deleteDispatchGroupAction,
+  createTruckPropertyAction,
+  updateTruckPropertyAction,
+  toggleTruckPropertyActive,
+  deleteTruckPropertyAction,
 } from "./actions";
 
 const inputCls =
@@ -31,12 +35,13 @@ export default async function SetupPage() {
   const user = await getCurrentUser();
   if (!isManagerRole(user?.role)) redirect("/fleet");
 
-  const [leaveTypes, holidays, credentialTypes, truckTypes, groups] = await Promise.all([
+  const [leaveTypes, holidays, credentialTypes, truckTypes, groups, truckProperties] = await Promise.all([
     referenceRepo.listAllLeaveTypes(),
     referenceRepo.listAllHolidays(),
     complianceRepo.listAllTypes(),
     complianceRepo.truckTypes(),
     fleetRepo.listAllDispatchGroups(),
+    fleetRepo.listAllTruckProperties(),
   ]);
   const categories = [...new Set(credentialTypes.map((c) => c.category))];
   const todayKey = ymd(todayUTC());
@@ -283,6 +288,69 @@ export default async function SetupPage() {
             flags in the Fleet doctor.
           </p>
         </div>
+      </Card>
+
+      {/* Truck properties */}
+      <Card title="Truck properties" count={truckProperties.length}>
+        <ul className="max-h-96 divide-y divide-slate-50 overflow-y-auto">
+          {truckProperties.map((p) => (
+            <li key={p.code} className={`px-4 py-1.5 ${p.isActive ? "" : "opacity-50"}`}>
+              <form action={updateTruckPropertyAction} className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="hidden" name="code" value={p.code} />
+                <span className="w-40 truncate font-mono text-[12px] font-semibold text-brand-mid" title={p.code}>
+                  {p.code}
+                </span>
+                <input name="name" defaultValue={p.name} className={`${inputCls} min-w-48 flex-1`} />
+                <input name="sortOrder" type="number" defaultValue={p.sortOrder} className={`${inputCls} w-16`} title="Sort order" />
+                <SubmitButton className={saveBtn} savedToast={`${p.code} saved`}>
+                  Save
+                </SubmitButton>
+              </form>
+              <div className="mt-0.5 flex items-center gap-3">
+                <form action={toggleTruckPropertyActive}>
+                  <input type="hidden" name="code" value={p.code} />
+                  <input type="hidden" name="active" value={p.isActive ? "false" : "true"} />
+                  <SubmitButton
+                    className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    savedToast={p.isActive ? `${p.code} hidden — ticked trucks keep it` : `${p.code} reactivated`}
+                  >
+                    {p.isActive ? "Hide" : "Reactivate"}
+                  </SubmitButton>
+                </form>
+                <form action={deleteTruckPropertyAction}>
+                  <input type="hidden" name="code" value={p.code} />
+                  <SubmitButton
+                    className="text-[11px] text-rose-600 hover:underline"
+                    savedToast={`${p.code} removed`}
+                    confirmMessage={
+                      p._count.trucks > 0
+                        ? `Remove "${p.name}" entirely?\n\nIts tick on ${p._count.trucks} truck${p._count.trucks === 1 ? "" : "s"} will be deleted with it. This can't be undone — use Hide instead to retire it and keep the ticks.`
+                        : `Remove "${p.name}"? No trucks carry it, so nothing else is affected.`
+                    }
+                  >
+                    Remove
+                  </SubmitButton>
+                </form>
+                <span className="text-[11px] text-slate-300">
+                  {p._count.trucks > 0 ? `${p._count.trucks} truck${p._count.trucks === 1 ? "" : "s"}` : "unused"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <form action={createTruckPropertyAction} className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          ＋ Add property
+          <input name="code" placeholder="CODE" className={`${inputCls} w-40 font-mono uppercase`} />
+          <input name="name" placeholder="Display name" className={`${inputCls} min-w-48 flex-1`} />
+          <SubmitButton className={saveBtn} savedToast="Truck property added">
+            Add
+          </SubmitButton>
+        </form>
+        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+          The tick boxes under each truck&apos;s setup on <b>Fleet → Trucks</b> — the allocation system&apos;s attribute
+          list. The code is what the allocation system prints, so it can&apos;t be edited after the fact. Hiding a
+          property takes it off the menu but keeps it ticked where it already is.
+        </p>
       </Card>
 
       {/* Public holidays */}

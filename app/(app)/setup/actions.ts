@@ -186,6 +186,61 @@ export async function deleteDispatchGroupAction(formData: FormData): Promise<voi
   refreshGroups();
 }
 
+// ---- truck properties -------------------------------------------------------
+// The allocation system's tick-box attributes, offered under every truck's
+// setup on Fleet → Trucks. The code is what the allocation system prints, so
+// it can't be edited after the fact.
+
+function refreshTruckProperties() {
+  revalidatePath("/setup");
+  revalidatePath("/fleet/trucks");
+}
+
+export async function createTruckPropertyAction(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code") ?? "").trim().toUpperCase().replace(/\s+/g, "_");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!code || !name) return;
+  await fleetRepo.createTruckProperty(code, name);
+  await logAction(user, "setup.truckPropertyCreate", "TruckProperty", null, `Added truck property ${code} (${name})`);
+  refreshTruckProperties();
+}
+
+export async function updateTruckPropertyAction(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code"));
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return;
+  await fleetRepo.updateTruckProperty(code, { name, sortOrder: Number(formData.get("sortOrder") ?? 50) || 50 });
+  await logAction(user, "setup.truckPropertyUpdate", "TruckProperty", null, `Updated truck property ${code} (${name})`);
+  refreshTruckProperties();
+}
+
+export async function toggleTruckPropertyActive(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code"));
+  const active = String(formData.get("active")) === "true";
+  await fleetRepo.setTruckPropertyActive(code, active);
+  await logAction(user, "setup.truckPropertyToggle", "TruckProperty", null, `${active ? "Reactivated" : "Hid"} truck property ${code}`);
+  refreshTruckProperties();
+}
+
+/** Delete a property and every truck's tick of it. */
+export async function deleteTruckPropertyAction(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code") ?? "").trim();
+  if (!code) return;
+  const { name, tickedBy } = await fleetRepo.deleteTruckProperty(code);
+  await logAction(
+    user,
+    "setup.truckPropertyDelete",
+    "TruckProperty",
+    null,
+    `Removed truck property ${code} (${name})${tickedBy > 0 ? ` and its tick on ${tickedBy} truck${tickedBy === 1 ? "" : "s"}` : ""}`,
+  );
+  refreshTruckProperties();
+}
+
 export async function createHolidayAction(formData: FormData): Promise<void> {
   const user = await requireManager();
   const date = String(formData.get("date") ?? "");

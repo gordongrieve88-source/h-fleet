@@ -1,9 +1,82 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { saveTruck, setTruckActive } from "@/app/(app)/fleet/admin-actions";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { saveTruck, setTruckActive, loadTruckProperties, setTruckProperty } from "@/app/(app)/fleet/admin-actions";
 import { Modal, Field, useAction, input, btnPrimary, btnGhost } from "./adminUi";
 import type { DepotOpt } from "./DriversAdmin";
+
+type TruckPropertyVM = { code: string; name: string; isActive: boolean; held: boolean };
+
+/**
+ * The truck's tick-box properties (Automatic Transmission, UHF, PBS, …) —
+ * the allocation system's attribute list. Ticks save immediately, like a
+ * driver's competencies. The catalog itself is managed in Setup.
+ */
+function Properties({ truckId }: { truckId: string }) {
+  const [rows, setRows] = useState<TruckPropertyVM[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    let live = true;
+    loadTruckProperties(truckId).then((r) => live && setRows(r));
+    return () => {
+      live = false;
+    };
+  }, [truckId]);
+
+  const toggle = (row: TruckPropertyVM, next: boolean) => {
+    setErr(null);
+    setBusy(row.code);
+    setRows((prev) => prev?.map((r) => (r.code === row.code ? { ...r, held: next } : r)) ?? prev);
+    startTransition(async () => {
+      const res = await setTruckProperty(truckId, row.code, next);
+      if (!res.ok) {
+        setErr(res.error ?? "Couldn't save that.");
+        setRows((prev) => prev?.map((r) => (r.code === row.code ? { ...r, held: !next } : r)) ?? prev);
+      }
+      setBusy(null);
+    });
+  };
+
+  if (rows === null) return <p className="text-xs text-slate-400">Loading properties…</p>;
+  if (rows.length === 0) {
+    return (
+      <p className="text-xs text-slate-400">
+        No truck properties set up yet — add them in <b>Setup</b>, then tick them off here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {err && <p className="text-xs text-rose-600">{err}</p>}
+      <ul className="grid max-h-[380px] grid-cols-1 gap-x-4 gap-y-1 overflow-y-auto pr-1 sm:grid-cols-2">
+        {rows.map((r) => (
+          <li key={r.code}>
+            <label className="flex cursor-pointer items-center gap-2 text-[13px]" title={r.code}>
+              <input
+                type="checkbox"
+                checked={r.held}
+                disabled={busy === r.code}
+                onChange={(e) => toggle(r, e.target.checked)}
+                className="accent-[#00843d]"
+              />
+              <span className={r.held ? "text-slate-800" : "text-slate-500"}>
+                {r.name}
+                {!r.isActive && <span className="ml-1 text-[10px] text-slate-400">(hidden)</span>}
+              </span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[11px] text-slate-400">
+        Tick boxes save immediately. Add or retire properties in <b>Setup</b>.
+      </p>
+    </div>
+  );
+}
 
 export type TruckRowVM = {
   id: string;
@@ -160,7 +233,9 @@ function TruckDialog({
   const submit = () => run(() => saveTruck({ id, isNew: !row, depotId, region, block, type, defaultDriverId }), onClose);
 
   return (
-    <Modal title={row ? `Edit ${row.id}` : "Add truck"} onClose={onClose}>
+    <Modal title={row ? `Edit ${row.id}` : "Add truck"} onClose={onClose} wide={!!row}>
+      <div className={row ? "grid gap-6 md:grid-cols-2" : ""}>
+      <div>
       <Field label="Fleet code">
         <input
           className={`${input} font-mono ${row ? "bg-slate-100 text-slate-400" : ""}`}
@@ -222,6 +297,14 @@ function TruckDialog({
         <button onClick={submit} disabled={pending} className={btnPrimary}>
           {pending ? "Saving…" : "Save"}
         </button>
+      </div>
+      </div>
+      {row && (
+        <div className="border-t border-slate-100 pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0">
+          <h4 className="mb-3 font-heading text-sm font-semibold text-brand-deep">Properties</h4>
+          <Properties truckId={row.id} />
+        </div>
+      )}
       </div>
     </Modal>
   );
