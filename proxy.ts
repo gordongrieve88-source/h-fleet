@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { authMode, sessionSecretKey, wallboardToken, SESSION_COOKIE, WALLBOARD_COOKIE } from "@/lib/auth/config";
 import { openSession } from "@/lib/auth/session";
+import { GATE_COOKIE, gateToken } from "@/lib/gate";
 
 /**
  * Sign-in gate (entra mode only; the demo passes straight through). This is
@@ -8,11 +9,27 @@ import { openSession } from "@/lib/auth/session";
  * real authorisation happens server-side in lib/auth on every page and
  * action, so nothing depends on the proxy for safety.
  *
+ * Hosted demo: when DEMO_PASSWORD is set, everything (wallboard included)
+ * additionally sits behind a shared-password gate (/gate). Locally the
+ * variable is unset, so this is a no-op.
+ *
  * Wallboard TVs can't do interactive SSO: /wallboard/* accepts a static
  * token instead — open /wallboard/fleet?key=<WALLBOARD_TOKEN> once and the
  * TV keeps a cookie. Rotate the token in the config file to cut old TVs off.
  */
+
+let cachedGateToken: Promise<string> | null = null;
+
 export async function proxy(request: NextRequest) {
+  if (process.env.DEMO_PASSWORD && !request.nextUrl.pathname.startsWith("/gate")) {
+    cachedGateToken ??= gateToken();
+    if (request.cookies.get(GATE_COOKIE)?.value !== (await cachedGateToken)) {
+      const url = new URL("/gate", request.url);
+      url.searchParams.set("callbackUrl", request.nextUrl.pathname);
+      return NextResponse.redirect(url);
+    }
+  }
+
   if (authMode() !== "entra") return NextResponse.next();
 
   const { pathname, search } = request.nextUrl;
@@ -48,7 +65,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except the auth flow, the health probe, the BI feed (which
-  // carries its own bearer token), and static assets.
-  matcher: ["/((?!auth/|api/health|api/bi/|_next/|favicon\\.ico|icon\\.png|logo\\.png).*)"],
+  // Everything except the demo gate, the auth flow, the health probe, the BI
+  // feed (which carries its own bearer token), and static assets.
+  matcher: ["/((?!gate|auth/|api/health|api/bi/|_next/|favicon\\.ico|icon\\.png|logo\\.png).*)"],
 };

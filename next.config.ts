@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Self-contained server bundle (server.js + traced node_modules) so hosts
+  // with small disks (e.g. Azure App Service F1) get ~100MB, not a full
+  // node_modules copy. Local `next dev`/`next start` are unaffected.
+  output: "standalone",
   experimental: {
     // The daily Syncrotess allocation PDF is uploaded through a server action.
     serverActions: { bodySizeLimit: "10mb" },
