@@ -36,8 +36,9 @@ export default async function FleetDepotsPage() {
           drivers: d._count.drivers,
           trucks: d._count.trucks,
         }))}
-        regions={regions.map((r) => ({ name: r.name, isActive: r.isActive, depots: r._count.depots }))}
-        groups={groups.map((g) => ({ code: g.code, name: g.name, isActive: g.isActive }))}
+        regions={regions.map((r) => ({ name: r.name, groupCode: r.dispatchGroupCode, isActive: r.isActive, depots: r._count.depots }))}
+        groups={groups.map((g) => ({ code: g.code, name: g.name, state: g.state, isActive: g.isActive }))}
+        currentGroup={group}
       />
     </div>
   );

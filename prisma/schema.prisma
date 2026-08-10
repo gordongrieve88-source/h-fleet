@@ -198,16 +198,22 @@ model DispatchGroup {
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
 
-  depots Depot[]
+  depots  Depot[]
+  regions FleetRegion[]
 }
 
-/// Fleet operating regions (Projects, Metro East/West/Central).
+/// Fleet operating regions (Projects, Metro East/West/Central). Regions
+/// belong to a dispatch group — each group draws its own operating map, so
+/// the depot editor only offers the regions of the group being assigned.
+/// Null = legacy/unassigned, offered everywhere until it's claimed.
 model FleetRegion {
-  name      String  @id
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
+  name              String  @id
+  dispatchGroupCode String?
+  sortOrder         Int     @default(0)
+  isActive          Boolean @default(true)
 
-  depots Depot[]
+  dispatchGroup DispatchGroup? @relation(fields: [dispatchGroupCode], references: [code], onDelete: SetNull)
+  depots        Depot[]
 }
 
 /// A physical home base (Greenacre, Prestons, …). Drivers and trucks belong

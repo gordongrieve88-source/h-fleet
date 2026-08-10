@@ -133,13 +133,13 @@ export const fleetRepo = {
 
   listAllRegions() {
     return prisma.fleetRegion.findMany({
-      orderBy: { sortOrder: "asc" },
+      orderBy: [{ dispatchGroupCode: "asc" }, { sortOrder: "asc" }],
       include: { _count: { select: { depots: true } } },
     });
   },
-  async createRegion(name: string) {
+  async createRegion(name: string, dispatchGroupCode: string | null = null) {
     const max = await prisma.fleetRegion.aggregate({ _max: { sortOrder: true } });
-    return prisma.fleetRegion.create({ data: { name, sortOrder: (max._max.sortOrder ?? 0) + 1 } });
+    return prisma.fleetRegion.create({ data: { name, dispatchGroupCode, sortOrder: (max._max.sortOrder ?? 0) + 1 } });
   },
   setRegionActive(name: string, isActive: boolean) {
     return prisma.fleetRegion.update({ where: { name }, data: { isActive } });

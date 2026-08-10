@@ -167,8 +167,10 @@ async function main() {
     await prisma.dispatchGroup.upsert({ where: { code: g.code }, create: g, update: g });
   }
 
+  // Every region we know about comes off the 301 roster, so they all belong
+  // to that group; other groups draw their own maps as their data arrives.
   for (let i = 0; i < FLEET_REGIONS.length; i++) {
-    await prisma.fleetRegion.create({ data: { name: FLEET_REGIONS[i], sortOrder: i } });
+    await prisma.fleetRegion.create({ data: { name: FLEET_REGIONS[i], dispatchGroupCode: "301", sortOrder: i } });
   }
 
   // Depots: unify bare driver plant names with compound truck blocks via the

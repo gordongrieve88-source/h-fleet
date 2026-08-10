@@ -208,12 +208,18 @@ export async function setDepotActive(id: number, isActive: boolean): Promise<Act
 }
 
 // ---- regions (org structure — managers only) --------------------------------
-export async function createFleetRegion(name: string): Promise<ActionResult> {
+export async function createFleetRegion(name: string, dispatchGroupCode: string | null = null): Promise<ActionResult> {
   const user = await requireManager();
   try {
     if (!name.trim()) return { ok: false, error: "Region name is required." };
-    await fleetRepo.createRegion(name.trim());
-    await logAction(user, "fleet.region.create", "FleetRegion", null, `Added fleet region ${name.trim()}`);
+    await fleetRepo.createRegion(name.trim(), dispatchGroupCode || null);
+    await logAction(
+      user,
+      "fleet.region.create",
+      "FleetRegion",
+      null,
+      `Added fleet region ${name.trim()}${dispatchGroupCode ? ` (group ${dispatchGroupCode})` : ""}`,
+    );
     refresh();
     return { ok: true };
   } catch (e) {

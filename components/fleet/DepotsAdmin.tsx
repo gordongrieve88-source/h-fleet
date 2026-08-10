@@ -2,19 +2,30 @@
 
 import { useState } from "react";
 import { saveDepot, setDepotActive, createFleetRegion, setFleetRegionActive } from "@/app/(app)/fleet/admin-actions";
+import { regionsForGroup } from "@/lib/fleet/regions";
 import { Modal, Field, useAction, input, btnPrimary, btnGhost } from "./adminUi";
 
 export type DepotRow = { id: number; name: string; region: string; state: string; groupCode: string | null; isActive: boolean; drivers: number; trucks: number };
-export type GroupOpt = { code: string; name: string; isActive: boolean };
+export type GroupOpt = { code: string; name: string; state: string; isActive: boolean };
 
 const STATES = ["NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"];
-export type RegionRow = { name: string; isActive: boolean; depots: number };
+export type RegionRow = { name: string; groupCode: string | null; isActive: boolean; depots: number };
 
-export function DepotsAdmin({ depots, regions, groups }: { depots: DepotRow[]; regions: RegionRow[]; groups: GroupOpt[] }) {
+export function DepotsAdmin({
+  depots,
+  regions,
+  groups,
+  currentGroup,
+}: {
+  depots: DepotRow[];
+  regions: RegionRow[];
+  groups: GroupOpt[];
+  currentGroup: string | null;
+}) {
   const [editing, setEditing] = useState<DepotRow | "new" | null>(null);
   const [newRegion, setNewRegion] = useState(false);
   const { run, pending } = useAction();
-  const activeRegions = regions.filter((r) => r.isActive).map((r) => r.name);
+  const activeRegions = regions.filter((r) => r.isActive);
 
   return (
     <div>
@@ -80,6 +91,13 @@ export function DepotsAdmin({ depots, regions, groups }: { depots: DepotRow[]; r
             {regions.map((r) => (
               <li key={r.name} className={`flex items-center justify-between px-4 py-2 ${r.isActive ? "" : "opacity-50"}`}>
                 <span className="text-sm font-medium text-slate-700">
+                  {r.groupCode ? (
+                    <span className="mr-1.5 font-mono text-[11px] font-bold text-brand-mid">{r.groupCode}</span>
+                  ) : (
+                    <span className="mr-1.5 text-[11px] text-slate-300" title="Not tied to a dispatch group — offered in every group">
+                      all
+                    </span>
+                  )}
                   {r.name} <span className="text-xs font-normal text-slate-400">· {r.depots} depots</span>
                 </span>
                 <button
@@ -95,37 +113,60 @@ export function DepotsAdmin({ depots, regions, groups }: { depots: DepotRow[]; r
         </div>
       </div>
 
-      {editing && <DepotDialog row={editing === "new" ? null : editing} regions={activeRegions} groups={groups} onClose={() => setEditing(null)} />}
-      {newRegion && <RegionDialog onClose={() => setNewRegion(false)} />}
+      {editing && (
+        <DepotDialog
+          row={editing === "new" ? null : editing}
+          regions={activeRegions}
+          groups={groups}
+          defaultGroup={currentGroup}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {newRegion && <RegionDialog groups={groups} defaultGroup={currentGroup} onClose={() => setNewRegion(false)} />}
     </div>
   );
 }
 
-function DepotDialog({ row, regions, groups, onClose }: { row: DepotRow | null; regions: string[]; groups: GroupOpt[]; onClose: () => void }) {
+function DepotDialog({
+  row,
+  regions,
+  groups,
+  defaultGroup,
+  onClose,
+}: {
+  row: DepotRow | null;
+  regions: RegionRow[];
+  groups: GroupOpt[];
+  defaultGroup: string | null;
+  onClose: () => void;
+}) {
   const [name, setName] = useState(row?.name ?? "");
-  const [region, setRegion] = useState(row?.region ?? regions[0] ?? "");
-  const [state, setState] = useState(row?.state ?? "NSW");
-  const [groupCode, setGroupCode] = useState(row?.groupCode ?? "");
+  const [groupCode, setGroupCode] = useState(row?.groupCode ?? defaultGroup ?? "");
+  const choices = regionsForGroup(regions, groupCode, row?.region ?? null);
+  const [region, setRegion] = useState(row?.region ?? choices[0]?.name ?? "");
+  const [state, setState] = useState(row?.state ?? groups.find((g) => g.code === (row?.groupCode ?? defaultGroup))?.state ?? "NSW");
   const { run, pending, error } = useAction();
+
+  // Switching group re-draws the region menu; a region that isn't in the new
+  // group falls back to its first, and the state follows the group it runs in.
+  const changeGroup = (code: string) => {
+    setGroupCode(code);
+    const next = regionsForGroup(regions, code, row?.region ?? null);
+    if (!next.some((r) => r.name === region)) setRegion(next[0]?.name ?? "");
+    const groupState = groups.find((g) => g.code === code)?.state;
+    if (groupState) setState(groupState);
+  };
+
   return (
     <Modal title={row ? `Edit ${row.name}` : "Add depot"} onClose={onClose}>
       <Field label="Depot name">
         <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Greenacre" autoFocus />
       </Field>
-      <Field label="Region">
-        <select className={input} value={region} onChange={(e) => setRegion(e.target.value)}>
-          {regions.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-      </Field>
       <Field label="Dispatch group">
         {/* A hidden group is off the menu for everyone else, but stays listed
             for the depot already in it — otherwise opening this dialog would
             silently unassign it on save. */}
-        <select className={input} value={groupCode} onChange={(e) => setGroupCode(e.target.value)}>
+        <select className={input} value={groupCode} onChange={(e) => changeGroup(e.target.value)}>
           <option value="">Unassigned</option>
           {groups
             .filter((g) => g.isActive || g.code === row?.groupCode)
@@ -137,6 +178,21 @@ function DepotDialog({ row, regions, groups, onClose }: { row: DepotRow | null; 
             ))}
         </select>
       </Field>
+      <Field label="Region">
+        <select className={input} value={region} onChange={(e) => setRegion(e.target.value)} disabled={choices.length === 0}>
+          {choices.map((r) => (
+            <option key={r.name} value={r.name}>
+              {r.name}
+              {r.groupCode === null ? " (all groups)" : ""}
+            </option>
+          ))}
+        </select>
+        {choices.length === 0 && (
+          <p className="mt-1 text-[11px] text-rose-600">
+            {groupCode ? `${groupCode} has no regions yet — add one first.` : "No regions yet — add one first."}
+          </p>
+        )}
+      </Field>
       <Field label="State">
         <select className={input} value={state} onChange={(e) => setState(e.target.value)}>
           {STATES.map((s) => (
@@ -146,8 +202,8 @@ function DepotDialog({ row, regions, groups, onClose }: { row: DepotRow | null; 
           ))}
         </select>
         <p className="mt-1 text-[11px] text-slate-400">
-          Decides which credentials apply to this depot&apos;s drivers — a NSW-only ticket doesn&apos;t follow the fleet
-          interstate.
+          Follows the dispatch group by default. Decides which credentials apply to this depot&apos;s drivers — a
+          NSW-only ticket doesn&apos;t follow the fleet interstate.
         </p>
       </Field>
       {error && <p className="mb-2 text-xs text-rose-600">{error}</p>}
@@ -155,7 +211,11 @@ function DepotDialog({ row, regions, groups, onClose }: { row: DepotRow | null; 
         <button onClick={onClose} className={btnGhost}>
           Cancel
         </button>
-        <button onClick={() => run(() => saveDepot({ id: row?.id, name, regionName: region, state, dispatchGroupCode: groupCode || null }), onClose)} disabled={pending} className={btnPrimary}>
+        <button
+          onClick={() => run(() => saveDepot({ id: row?.id, name, regionName: region, state, dispatchGroupCode: groupCode || null }), onClose)}
+          disabled={pending || !region}
+          className={btnPrimary}
+        >
           {pending ? "Saving…" : "Save"}
         </button>
       </div>
@@ -163,20 +223,37 @@ function DepotDialog({ row, regions, groups, onClose }: { row: DepotRow | null; 
   );
 }
 
-function RegionDialog({ onClose }: { onClose: () => void }) {
+function RegionDialog({ groups, defaultGroup, onClose }: { groups: GroupOpt[]; defaultGroup: string | null; onClose: () => void }) {
   const [name, setName] = useState("");
+  const [groupCode, setGroupCode] = useState(defaultGroup ?? "");
   const { run, pending, error } = useAction();
   return (
     <Modal title="Add region" onClose={onClose}>
       <Field label="Region name">
         <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Metro North" autoFocus />
       </Field>
+      <Field label="Dispatch group">
+        <select className={input} value={groupCode} onChange={(e) => setGroupCode(e.target.value)}>
+          <option value="">All groups</option>
+          {groups
+            .filter((g) => g.isActive)
+            .map((g) => (
+              <option key={g.code} value={g.code}>
+                {g.code} — {g.name}
+              </option>
+            ))}
+        </select>
+        <p className="mt-1 text-[11px] text-slate-400">
+          The region only appears when assigning a depot to this group. &ldquo;All groups&rdquo; keeps it on offer
+          everywhere.
+        </p>
+      </Field>
       {error && <p className="mb-2 text-xs text-rose-600">{error}</p>}
       <div className="mt-1 flex justify-end gap-2">
         <button onClick={onClose} className={btnGhost}>
           Cancel
         </button>
-        <button onClick={() => run(() => createFleetRegion(name), onClose)} disabled={pending} className={btnPrimary}>
+        <button onClick={() => run(() => createFleetRegion(name, groupCode || null), onClose)} disabled={pending} className={btnPrimary}>
           {pending ? "Saving…" : "Save"}
         </button>
       </div>
