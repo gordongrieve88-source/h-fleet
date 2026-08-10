@@ -20,6 +20,8 @@ import {
   SEED_DAY as FLEET_SEED_DAY,
 } from "./seed-data/fleet-data";
 import { anonymiseDrivers, anonymiseRequested } from "./seed-data/anonymise";
+import { TRUCK_PROPERTIES } from "./seed-data/truck-properties";
+import { INDUCTIONS } from "./seed-data/inductions";
 
 /**
  * The real fleet's drivers are real employees. Anywhere a stranger could reach
@@ -228,6 +230,39 @@ async function main() {
     });
   }
 
+  // ---- Truck properties ---------------------------------------------------
+  // The catalog is the allocation system's property list (reference data,
+  // upserted). Per-truck ticks aren't in the extract, so the demo sprinkles a
+  // plausible generic subset deterministically off the fleet code — enough
+  // that the panel and any chips look real, stable across reseeds.
+  for (let i = 0; i < TRUCK_PROPERTIES.length; i++) {
+    const p = TRUCK_PROPERTIES[i];
+    await prisma.truckProperty.upsert({
+      where: { code: p.code },
+      create: { code: p.code, name: p.name, sortOrder: i },
+      update: { name: p.name, sortOrder: i },
+    });
+  }
+  const hash = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 997, 7);
+  // Attributes any truck could plausibly carry; threshold = how common.
+  const SPRINKLE: [string, number][] = [
+    ["COMP", 0.75],
+    ["AUTOT", 0.55],
+    ["UHF", 0.45],
+    ["S_LIGHT", 0.4],
+    ["TRACCON", 0.35],
+    ["CATCON", 0.3],
+    ["NHVAS", 0.3],
+    ["MET", 0.4],
+    ["NIGHT", 0.15],
+  ];
+  for (const t of FLEET_TRUCKS) {
+    const ticked = SPRINKLE.filter(([code, p]) => hash(t.id + code) / 997 < p).map(([code]) => code);
+    // Branding is either/or, never both.
+    ticked.push(hash(t.id + "BRAND") % 2 ? "HANSON" : "HYMIX");
+    await prisma.truckOnProperty.createMany({ data: ticked.map((code) => ({ truckId: t.id, propertyCode: code })) });
+  }
+
   // Link the demo self-service account to a driver who actually drives a
   // truck, so /me has a roster to show.
   const demoDriverUser = await prisma.appUser.findUnique({ where: { email: "driver@h-fleet.demo" } });
@@ -254,21 +289,27 @@ async function main() {
     { code: "HV", name: "Heavy vehicle licence (HC)", kind: "EXPIRY", category: T, severity: "BLOCK", warnDays: 60, requiredForTruckType: null, sortOrder: 1 },
     { code: "MED", name: "Commercial driver medical", kind: "EXPIRY", category: T, severity: "WARN", warnDays: 60, requiredForTruckType: null, sortOrder: 2 },
     { code: "IND", name: "General site induction", kind: "EXPIRY", category: T, severity: "WARN", warnDays: 30, requiredForTruckType: null, sortOrder: 3 },
-    // Truck sign-offs — the enforceable ones.
-    { code: "AGI", name: "Agitator sign-off", kind: "TICKBOX", states: "ALL", category: "Truck types", severity: "WARN", warnDays: 0, requiredForTruckType: "Agitator", sortOrder: 10 },
-    // Jurisdiction-specific examples — these only reach drivers whose depot
-    // is in that state, which is what makes the fleet portable interstate.
-    { code: "NSWWHS", name: "NSW WHS white card", kind: "TICKBOX", category: "Site inductions", states: "NSW", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 32 },
-    { code: "VICRWY", name: "VIC rail-corridor induction", kind: "TICKBOX", category: "Site inductions", states: "VIC", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 33 },
-    // Mix competencies.
-    { code: "MXHS", name: "High-strength mixes", kind: "TICKBOX", states: "ALL", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 20 },
-    { code: "MXCOL", name: "Coloured / architectural", kind: "TICKBOX", states: "ALL", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 21 },
-    { code: "MXSHOT", name: "Shotcrete", kind: "TICKBOX", states: "ALL", category: "Mix training", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 22 },
-    // Job-site inductions — informational: the board knows which plant a
-    // truck works from, not which customer site it's sent to.
-    { code: "STA", name: "Site A — major project", kind: "TICKBOX", states: "ALL", category: "Site inductions", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 30 },
-    { code: "STB", name: "Site B — rail corridor", kind: "TICKBOX", states: "ALL", category: "Site inductions", severity: "WARN", warnDays: 0, requiredForTruckType: null, sortOrder: 31 },
+    // The allocation system's induction list — the tick boxes under every
+    // driver's setup. INDUCTION1-19 are its generic slots; rename them in
+    // Setup as real sites claim them.
+    ...INDUCTIONS.map((ind, i) => ({
+      code: ind.code,
+      name: ind.name,
+      kind: "TICKBOX",
+      states: "ALL",
+      category: "Inductions",
+      severity: "WARN",
+      warnDays: 0,
+      requiredForTruckType: null,
+      sortOrder: 10 + i,
+    })),
   ];
+  // Earlier seeds invented placeholder competencies (agitator sign-off, mix
+  // training, site A/B); the real induction list replaces them. Safe to drop
+  // here: per-driver records were cascade-deleted with the drivers above.
+  await prisma.credentialType.deleteMany({
+    where: { code: { in: ["AGI", "NSWWHS", "VICRWY", "MXHS", "MXCOL", "MXSHOT", "STA", "STB"] } },
+  });
   for (const ct of credentialTypes) {
     await prisma.credentialType.upsert({ where: { code: ct.code }, create: ct, update: ct });
   }
@@ -288,18 +329,16 @@ async function main() {
   });
   await prisma.driverCredential.createMany({ data: credRows });
 
-  // Competencies (tick boxes — no expiry). Deterministic spread so the demo
-  // shows a realistic mix of who is and isn't signed off. Nearly everyone is
-  // agitator-signed-off; a few deliberately aren't, so the truck-type gate
-  // has something to catch.
+  // Inductions (tick boxes — no expiry). Deterministic spread so the demo
+  // shows a realistic mix: the Imagecrete pair are specialist (sparse), and
+  // each driver holds a few of the numbered site inductions.
   const tickRows: { driverId: number; typeCode: string }[] = [];
   allDrivers.forEach(({ id }, i) => {
-    if (i % 23 !== 4) tickRows.push({ driverId: id, typeCode: "AGI" });
-    if (i % 3 === 0) tickRows.push({ driverId: id, typeCode: "MXHS" });
-    if (i % 7 === 2) tickRows.push({ driverId: id, typeCode: "MXCOL" });
-    if (i % 11 === 5) tickRows.push({ driverId: id, typeCode: "MXSHOT" });
-    if (i % 5 === 1) tickRows.push({ driverId: id, typeCode: "STA" });
-    if (i % 9 === 3) tickRows.push({ driverId: id, typeCode: "STB" });
+    if (i % 7 === 2) tickRows.push({ driverId: id, typeCode: "IC" });
+    if (i % 13 === 5) tickRows.push({ driverId: id, typeCode: "IB" });
+    for (let n = 1; n <= 19; n++) {
+      if ((i + n * 13) % 6 === 0) tickRows.push({ driverId: id, typeCode: `INDUCTION${n}` });
+    }
   });
   await prisma.driverCredential.createMany({ data: tickRows });
 
