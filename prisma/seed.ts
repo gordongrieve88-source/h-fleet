@@ -283,15 +283,12 @@ async function main() {
   // Types are reference data (upserted); per-driver credentials rebuild with
   // the fleet. Expiries are deterministic off the driver id so the demo
   // always shows a few expiring/expired rows in the doctor + Compliance page.
-  const T = "Tickets & medicals";
   const credentialTypes = [
-    // Dated tickets — maintained with an expiry on the Compliance screen.
-    { code: "HV", name: "Heavy vehicle licence (HC)", kind: "EXPIRY", category: T, severity: "BLOCK", warnDays: 60, requiredForTruckType: null, sortOrder: 1 },
-    { code: "MED", name: "Commercial driver medical", kind: "EXPIRY", category: T, severity: "WARN", warnDays: 60, requiredForTruckType: null, sortOrder: 2 },
-    { code: "IND", name: "General site induction", kind: "EXPIRY", category: T, severity: "WARN", warnDays: 30, requiredForTruckType: null, sortOrder: 3 },
     // The allocation system's induction list — the tick boxes under every
     // driver's setup. INDUCTION1-19 are its generic slots; rename them in
-    // Setup as real sites claim them.
+    // Setup as real sites claim them. No invented dated tickets: the demo
+    // seeds only what the real system has, and Setup can add licences and
+    // medicals when the business wants them tracked.
     ...INDUCTIONS.map((ind, i) => ({
       code: ind.code,
       name: ind.name,
@@ -304,30 +301,17 @@ async function main() {
       sortOrder: 10 + i,
     })),
   ];
-  // Earlier seeds invented placeholder competencies (agitator sign-off, mix
-  // training, site A/B); the real induction list replaces them. Safe to drop
-  // here: per-driver records were cascade-deleted with the drivers above.
+  // Earlier seeds invented placeholder credentials (agitator sign-off, mix
+  // training, site A/B, dated licence/medical/induction tickets); the real
+  // induction list replaces them. Safe to drop here: per-driver records were
+  // cascade-deleted with the drivers above.
   await prisma.credentialType.deleteMany({
-    where: { code: { in: ["AGI", "NSWWHS", "VICRWY", "MXHS", "MXCOL", "MXSHOT", "STA", "STB"] } },
+    where: { code: { in: ["AGI", "NSWWHS", "VICRWY", "MXHS", "MXCOL", "MXSHOT", "STA", "STB", "HV", "MED", "IND"] } },
   });
   for (const ct of credentialTypes) {
     await prisma.credentialType.upsert({ where: { code: ct.code }, create: ct, update: ct });
   }
   const allDrivers = await prisma.driver.findMany({ select: { id: true }, orderBy: { id: "asc" } });
-  const credRows: { driverId: number; typeCode: string; reference: string; expiresOn: Date }[] = [];
-  allDrivers.forEach(({ id }, i) => {
-    // Licences: spread over ~3 years ahead; every ~40th driver expiring soon,
-    // one in the whole fleet already expired (i === 17).
-    const hvDays = i === 17 ? -12 : i % 40 === 5 ? 21 : 90 + ((i * 37) % 1000);
-    credRows.push({ driverId: id, typeCode: "HV", reference: `HC-${20000 + id}`, expiresOn: addDays(today, hvDays) });
-    // Medicals: every ~30th expiring inside the warn window, one expired.
-    const medDays = i === 44 ? -30 : i % 30 === 11 ? 40 : 60 + ((i * 53) % 700);
-    credRows.push({ driverId: id, typeCode: "MED", reference: `MED-${7000 + id}`, expiresOn: addDays(today, medDays) });
-    // Inductions: most fine, a handful inside 30 days.
-    const indDays = i % 25 === 7 ? 12 : 45 + ((i * 29) % 500);
-    credRows.push({ driverId: id, typeCode: "IND", reference: `IND-${3000 + id}`, expiresOn: addDays(today, indDays) });
-  });
-  await prisma.driverCredential.createMany({ data: credRows });
 
   // Inductions (tick boxes — no expiry). Deterministic spread so the demo
   // shows a realistic mix: the Imagecrete pair are specialist (sparse), and

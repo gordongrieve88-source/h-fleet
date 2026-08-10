@@ -43,7 +43,12 @@ export default async function SetupPage() {
     fleetRepo.listAllDispatchGroups(),
     fleetRepo.listAllTruckProperties(),
   ]);
-  const categories = [...new Set(credentialTypes.map((c) => c.category))];
+  // Inductions are credential types under the hood (kind TICKBOX, category
+  // "Inductions") but they get their own simple card — burying 20+ of them
+  // among the dated-ticket machinery made both unreadable.
+  const inductions = credentialTypes.filter((c) => c.category === "Inductions");
+  const otherCredentialTypes = credentialTypes.filter((c) => c.category !== "Inductions");
+  const categories = [...new Set(otherCredentialTypes.map((c) => c.category))];
   const todayKey = ymd(todayUTC());
   const upcomingHolidays = holidays.filter((h) => h.date >= todayKey);
 
@@ -172,10 +177,94 @@ export default async function SetupPage() {
         </form>
       </Card>
 
+      {/* Driver inductions — simple tick boxes, one row each. Hidden inputs pin
+          the credential-type fields that don't apply to an induction. */}
+      <Card title="Driver inductions" count={inductions.length}>
+        <ul className="max-h-96 divide-y divide-slate-50 overflow-y-auto">
+          {inductions.map((ind) => (
+            <li key={ind.code} className={`px-4 py-1.5 ${ind.isActive ? "" : "opacity-50"}`}>
+              <form action={updateCredentialTypeAction} className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="hidden" name="code" value={ind.code} />
+                <input type="hidden" name="kind" value="TICKBOX" />
+                <input type="hidden" name="category" value="Inductions" />
+                <input type="hidden" name="states" value={ind.states} />
+                <input type="hidden" name="severity" value={ind.severity} />
+                <input type="hidden" name="warnDays" value={ind.warnDays} />
+                <input type="hidden" name="requiredForTruckType" value={ind.requiredForTruckType ?? ""} />
+                <span className="w-40 truncate font-mono text-[12px] font-semibold text-brand-mid" title={ind.code}>
+                  {ind.code}
+                </span>
+                <input name="name" defaultValue={ind.name} className={`${inputCls} min-w-48 flex-1`} />
+                <input name="sortOrder" type="number" defaultValue={ind.sortOrder} className={`${inputCls} w-16`} title="Sort order" />
+                <SubmitButton className={saveBtn} savedToast={`${ind.code} saved`}>
+                  Save
+                </SubmitButton>
+              </form>
+              <div className="mt-0.5 flex items-center gap-3">
+                <form action={toggleCredentialTypeActive}>
+                  <input type="hidden" name="code" value={ind.code} />
+                  <input type="hidden" name="active" value={ind.isActive ? "false" : "true"} />
+                  <SubmitButton
+                    className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    savedToast={ind.isActive ? `${ind.code} hidden — inducted drivers keep it` : `${ind.code} reactivated`}
+                  >
+                    {ind.isActive ? "Hide" : "Reactivate"}
+                  </SubmitButton>
+                </form>
+                <form action={deleteCredentialTypeAction}>
+                  <input type="hidden" name="code" value={ind.code} />
+                  <SubmitButton
+                    className="text-[11px] text-rose-600 hover:underline"
+                    savedToast={`${ind.code} removed`}
+                    confirmMessage={
+                      ind._count.credentials > 0
+                        ? `Remove "${ind.name}" entirely?\n\n${ind._count.credentials} driver${ind._count.credentials === 1 ? "" : "s"} hold it and their tick will be deleted with it. This can't be undone — use Hide instead to retire it and keep the history.`
+                        : `Remove "${ind.name}"? No drivers hold it, so nothing else is affected.`
+                    }
+                  >
+                    Remove
+                  </SubmitButton>
+                </form>
+                <span className="text-[11px] text-slate-300">
+                  {ind._count.credentials > 0 ? `${ind._count.credentials} driver${ind._count.credentials === 1 ? "" : "s"}` : "unused"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <form action={createCredentialTypeAction} className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          ＋ Add induction
+          <input type="hidden" name="kind" value="TICKBOX" />
+          <input type="hidden" name="category" value="Inductions" />
+          <input type="hidden" name="states" value="ALL" />
+          <input type="hidden" name="severity" value="WARN" />
+          <input type="hidden" name="warnDays" value="0" />
+          <input type="hidden" name="requiredForTruckType" value="" />
+          <input name="code" placeholder="CODE" className={`${inputCls} w-40 font-mono uppercase`} />
+          <input name="name" placeholder="Display name" className={`${inputCls} min-w-48 flex-1`} />
+          <input name="sortOrder" type="number" defaultValue={50} className={`${inputCls} w-16`} />
+          <SubmitButton className={saveBtn} savedToast="Induction added">
+            Add
+          </SubmitButton>
+        </form>
+        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+          The tick boxes under each driver&apos;s setup on <b>Fleet → Drivers</b> — the allocation system&apos;s induction
+          list. INDUCTION1–19 are its generic slots: rename one as a real site claims it (the code is the allocation
+          system&apos;s identity and stays put). Hiding an induction takes it off the menu but keeps it ticked where it
+          already is. Dated tickets and gated competencies live in the card below.
+        </p>
+      </Card>
+
       {/* Driver credential types */}
-      <Card title="Driver credentials & competencies" count={credentialTypes.length}>
+      <Card title="Driver credentials & competencies" count={otherCredentialTypes.length}>
         <ul className="divide-y divide-slate-50">
-          {credentialTypes.map((ct) => (
+          {otherCredentialTypes.length === 0 && (
+            <li className="px-4 py-3 text-xs text-slate-400">
+              None yet — this card is for dated tickets (licences, medicals) and competencies that gate a truck type.
+              Simple site inductions belong in the card above.
+            </li>
+          )}
+          {otherCredentialTypes.map((ct) => (
             <li key={ct.code} className={`px-4 py-1.5 ${ct.isActive ? "" : "opacity-50"}`}>
               <form action={updateCredentialTypeAction} className="flex flex-wrap items-center gap-2 text-sm">
                 <input type="hidden" name="code" value={ct.code} />
