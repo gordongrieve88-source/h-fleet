@@ -26,10 +26,14 @@ cp -R "$ROOT/.next/standalone/Projects/h-fleet/." "$STAGE/"
 cp -R "$ROOT/.next/static" "$STAGE/.next/static"
 cp -R "$ROOT/public" "$STAGE/public"
 
-# Fresh demo data, shipped in the zip.
+# Fresh demo data, shipped in the zip. SEED_ANONYMISE is non-negotiable: the
+# real seed's drivers are real employees (see deploy/AZURE.md — "The data"),
+# and this database is about to be on the internet. The bundle itself carries
+# no real names either way — the app never imports prisma/seed-data, so the
+# standalone trace leaves the source file out of the zip.
 mkdir -p "$STAGE/prisma"
 DATABASE_URL="file:$STAGE/prisma/dev.db" npx prisma migrate deploy
-DATABASE_URL="file:$STAGE/prisma/dev.db" npx tsx prisma/seed.ts
+SEED_ANONYMISE=1 DATABASE_URL="file:$STAGE/prisma/dev.db" npx tsx prisma/seed.ts
 
 # The Mac-built native module won't load on App Service — swap in the
 # linux-x64 prebuild for the same version (Node 22 = ABI 127).
