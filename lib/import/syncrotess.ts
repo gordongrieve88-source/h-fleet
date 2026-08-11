@@ -8,6 +8,8 @@
  * Pure functions over extracted lines; PDF handling lives in ./pdf.ts.
  */
 
+import { samePlantWord } from "@/lib/wfm/fleet";
+
 export interface ImportDriverRef {
   id: number;
   name: string;
@@ -119,8 +121,18 @@ function truckBase(token: string): string {
 
 export function parseAllocationLines(
   lines: string[],
-  ctx: { truckIds: string[]; drivers: ImportDriverRef[] },
+  ctx: { truckIds: string[]; drivers: ImportDriverRef[]; plants?: string[] },
 ): ParseOutcome {
+  // Known plant words (first word of each depot/block name) — a location is
+  // only believed when it matches one. Layouts shuffle between sheets; a
+  // fixed column index once swallowed a constant "SAS" column as the plant.
+  const plantWords = [...new Set((ctx.plants ?? []).map((pl) => pl.trim().split(/\s+/)[0] ?? "").filter((w) => w.length >= 3))];
+  const knownPlant = (text: string): string | null => {
+    const clean = text.trim();
+    const w = clean.split(/\s+/)[0] ?? "";
+    if (!/^[A-Za-z]{3,}$/.test(w)) return null;
+    return plantWords.some((pw) => samePlantWord(pw, w)) ? clean : null;
+  };
   const truckSet = new Map(ctx.truckIds.map((t) => [t.toUpperCase(), t]));
   const byEmpNo = new Map(ctx.drivers.map((d) => [d.empNo, d]));
   const byNameKey = new Map<string, ImportDriverRef>();
@@ -156,9 +168,8 @@ export function parseAllocationLines(
     // Time (first one on the line = start time) — any of the sheet's habits.
     const time = parseLooseTime(line);
 
-    // The Location column of the tabular roster (Time|Name|…|Parking|Location|…),
-    // or the time column's "<plant> start" habit for a truck lent out for the day.
-    const location = (cols.length >= 6 && cols[5] !== "" ? cols[5] : null) ?? locationFromNote(line);
+    // Driver first — a driver's surname can look like a plant, so the
+    // location scan below skips the column their name sits in.
 
     // Driver: employee number beats name; names match on normalised forms.
     let driver: ImportDriverRef | null = null;
@@ -178,6 +189,25 @@ export function parseAllocationLines(
           break;
         }
       }
+    }
+
+    // Work location: the LAST column whose first word is a known plant (the
+    // sheet may print home plant early and the day's plant later), skipping
+    // the truck's own column and the driver's name column. Fallback: the
+    // time column's "<plant> start" habit, validated the same way.
+    let location: string | null = null;
+    const driverKeys = driver ? nameKeys(driver.name) : [];
+    for (const c of cols) {
+      if (c.includes(truckToken)) continue;
+      if (driverKeys.length && driverKeys.some((k) => k && ` ${normName(c)} `.includes(` ${k} `))) continue;
+      // "<plant> start" is a note — keep the plant, drop the word "start".
+      const note = locationFromNote(c);
+      const hit = note ? knownPlant(note) : knownPlant(c);
+      if (hit) location = hit;
+    }
+    if (!location) {
+      const note = locationFromNote(line);
+      if (note && (plantWords.length === 0 || knownPlant(note))) location = note;
     }
 
     let status: EntryStatus;

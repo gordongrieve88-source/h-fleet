@@ -109,7 +109,7 @@ export function hostBlockFor(homeBlock: string, awayPlant: string, blocks: strin
  * Prestons, "GIRRAWEEN CONCRETE" is Girraween. Prefix match, 4+ letters so
  * short words can't false-hit.
  */
-function samePlantWord(a: string, b: string): boolean {
+export function samePlantWord(a: string, b: string): boolean {
   const x = a.toLowerCase();
   const y = b.toLowerCase();
   if (x === y) return true;

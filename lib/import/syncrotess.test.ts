@@ -92,3 +92,42 @@ describe("locationFromNote — '<plant> start' in the time column", () => {
     expect(locationFromNote("07:00")).toBeNull();
   });
 });
+
+describe("work location — believed only when it names a real plant", () => {
+  const pctx = {
+    truckIds: ["T1", "T2"],
+    drivers: [
+      { id: 1, name: "Alpha Driver", empNo: "101" },
+      { id: 2, name: "Preston Driver", empNo: "102" },
+    ],
+    plants: ["Greenacre", "Prestons Metro", "Camellia"],
+  };
+
+  it("takes the last column that names a known plant", () => {
+    const { entries } = parseAllocationLines(["T1\tAlpha Driver\t05:30\tSAS\tCAMELLIA CONCRETE"], pctx);
+    expect(entries[0].location).toBe("CAMELLIA CONCRETE");
+  });
+
+  it("ignores constant junk columns that aren't plants (the SAS sheet)", () => {
+    const { entries } = parseAllocationLines(["T1\tAlpha Driver\t05:30\tSAS"], pctx);
+    expect(entries[0].location).toBeNull();
+  });
+
+  it("matches the sheet's clipped plant spellings", () => {
+    const { entries } = parseAllocationLines(["T1\tAlpha Driver\t05:30\tSAS\tPRESTON"], pctx);
+    expect(entries[0].location).toBe("PRESTON");
+  });
+
+  it("a driver surnamed like a plant is not a location", () => {
+    const { entries } = parseAllocationLines(["T2\tPreston Driver\t06:00\tSAS"], pctx);
+    expect(entries[0].driverName).toBe("Preston Driver");
+    expect(entries[0].location).toBeNull();
+  });
+
+  it("'<plant> start' notes still work, validated against real plants", () => {
+    const { entries } = parseAllocationLines(["T1\tAlpha Driver\tpreston start"], pctx);
+    expect(entries[0].location).toBe("PRESTON");
+    const junk = parseAllocationLines(["T1\tAlpha Driver\tsas start"], pctx);
+    expect(junk.entries[0].location).toBeNull();
+  });
+});

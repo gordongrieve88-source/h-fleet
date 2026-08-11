@@ -19,6 +19,9 @@ const ctx = {
     { id: 1, name: "Trap Two", empNo: "02" },
     { id: 2, name: "Trap Group", empNo: "301" },
   ],
+  // Locations are believed only when they name a real plant — the sheet's
+  // constant SAS column must never be mistaken for one again.
+  plants: ["Artarmon", "Camellia", "Banksmeadow", "Greenacre", "Prestons", "Girraween", "Pyrmont"],
 };
 
 let entries: ParsedEntry[];

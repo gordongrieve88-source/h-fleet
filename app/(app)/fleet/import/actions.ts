@@ -50,6 +50,8 @@ export async function parseAllocationPdf(formData: FormData): Promise<ParseResul
     const outcome = parseAllocationLines(lines, {
       truckIds: trucks.map((t) => t.id),
       drivers: drivers.map((d) => ({ id: d.id, name: d.name, empNo: d.employeeNo })),
+      // Location columns are believed only when they name a real plant.
+      plants: [...new Set([...trucks.map((t) => t.depot.name), ...trucks.map((t) => t.block)])],
     });
     const depotByTruck = new Map(trucks.map((t) => [t.id, t.depotId]));
     const depotNameByTruck = new Map(trucks.map((t) => [t.id, t.depot.name]));
