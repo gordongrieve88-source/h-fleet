@@ -251,13 +251,14 @@ model Driver {
   /// linked; one account per driver. Set on the Drivers admin screen.
   appUserId  Int?    @unique
 
-  depot         Depot               @relation(fields: [depotId], references: [id])
-  appUser       AppUser?            @relation(fields: [appUserId], references: [id], onDelete: SetNull)
+  depot         Depot                @relation(fields: [depotId], references: [id])
+  appUser       AppUser?             @relation(fields: [appUserId], references: [id], onDelete: SetNull)
   leave         DriverLeave[]
   entitlements  DriverEntitlement[]
-  defaultTrucks Truck[]             @relation("TruckDefaultDriver")
+  defaultTrucks Truck[]              @relation("TruckDefaultDriver")
   assignments   TruckAssignment[]
   credentials   DriverCredential[]
+  profile       DriverProfileValue[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -292,6 +293,39 @@ model Truck {
 
   @@index([depotId])
   @@index([region])
+}
+
+/// One field of the driver onboarding checklist — the information every
+/// driver's profile holds (licence details, white card, emergency contact,
+/// site setups and courses, …). The catalog mirrors the business's
+/// "Onboarding Checklist" workbook and is managed in Setup; values live in
+/// DriverProfileValue. Kind decides the input: TEXT, DATE, or YESNO.
+model DriverProfileField {
+  code      String  @id
+  label     String
+  section   String
+  kind      String  @default("TEXT") // TEXT / DATE / YESNO
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  values DriverProfileValue[]
+}
+
+/// One driver's answer to one checklist field. Stored as a string: ISO date
+/// for DATE, "yes" for a ticked YESNO, free text otherwise. No row = blank.
+model DriverProfileValue {
+  id        Int    @id @default(autoincrement())
+  driverId  Int
+  fieldCode String
+  value     String
+
+  updatedAt DateTime @updatedAt
+
+  driver Driver             @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  field  DriverProfileField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
+
+  @@unique([driverId, fieldCode])
+  @@index([fieldCode])
 }
 
 /// The tick-box attributes a truck can carry — the allocation system's

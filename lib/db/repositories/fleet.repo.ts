@@ -77,6 +77,66 @@ export const fleetRepo = {
     return prisma.truck.findUnique({ where: { id }, include: { depot: true } });
   },
 
+  // ---- driver profile (onboarding checklist) --------------------------------
+  // The field catalog mirrors the business's Onboarding Checklist workbook;
+  // values hang off each driver. Managed in Setup, filled in on the driver's
+  // profile page.
+  listAllProfileFields() {
+    return prisma.driverProfileField.findMany({
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      include: { _count: { select: { values: true } } },
+    });
+  },
+  async createProfileField(d: { code: string; label: string; section: string; kind: string }) {
+    const max = await prisma.driverProfileField.aggregate({ _max: { sortOrder: true } });
+    return prisma.driverProfileField.create({ data: { ...d, sortOrder: (max._max.sortOrder ?? 0) + 1 } });
+  },
+  updateProfileField(code: string, d: { label: string; section: string; kind: string; sortOrder?: number }) {
+    return prisma.driverProfileField.update({ where: { code }, data: d });
+  },
+  setProfileFieldActive(code: string, isActive: boolean) {
+    return prisma.driverProfileField.update({ where: { code }, data: { isActive } });
+  },
+  /** Delete a checklist field and every driver's answer to it. */
+  async deleteProfileField(code: string) {
+    const field = await prisma.driverProfileField.findUnique({
+      where: { code },
+      include: { _count: { select: { values: true } } },
+    });
+    if (!field) throw new Error(`Unknown profile field ${code}.`);
+    await prisma.driverProfileField.delete({ where: { code } });
+    return { label: field.label, answers: field._count.values };
+  },
+  /**
+   * One driver's profile: every offerable field (active, plus inactive ones
+   * this driver has an answer for — retiring a field shouldn't hide history)
+   * with the driver's value, grouped in catalog order.
+   */
+  async driverProfile(driverId: number) {
+    const [fields, values] = await Promise.all([
+      prisma.driverProfileField.findMany({ orderBy: [{ sortOrder: "asc" }, { code: "asc" }] }),
+      prisma.driverProfileValue.findMany({ where: { driverId } }),
+    ]);
+    const byCode = new Map(values.map((v) => [v.fieldCode, v.value]));
+    return fields
+      .filter((f) => f.isActive || byCode.has(f.code))
+      .map((f) => ({ code: f.code, label: f.label, section: f.section, kind: f.kind, value: byCode.get(f.code) ?? "" }));
+  },
+  /** Write one driver's answers: empty string clears, anything else upserts. */
+  async saveDriverProfileValues(driverId: number, entries: { fieldCode: string; value: string }[]) {
+    for (const { fieldCode, value } of entries) {
+      if (value === "") {
+        await prisma.driverProfileValue.deleteMany({ where: { driverId, fieldCode } });
+      } else {
+        await prisma.driverProfileValue.upsert({
+          where: { driverId_fieldCode: { driverId, fieldCode } },
+          create: { driverId, fieldCode, value },
+          update: { value },
+        });
+      }
+    }
+  },
+
   // ---- truck properties -----------------------------------------------------
   // The tick boxes under each truck's setup. Catalog managed in Setup; ticked
   // per truck on the Trucks screen.

@@ -24,6 +24,10 @@ import {
   updateTruckPropertyAction,
   toggleTruckPropertyActive,
   deleteTruckPropertyAction,
+  createProfileFieldAction,
+  updateProfileFieldAction,
+  toggleProfileFieldActive,
+  deleteProfileFieldAction,
 } from "./actions";
 
 const inputCls =
@@ -35,14 +39,16 @@ export default async function SetupPage() {
   const user = await getCurrentUser();
   if (!isManagerRole(user?.role)) redirect("/fleet");
 
-  const [leaveTypes, holidays, credentialTypes, truckTypes, groups, truckProperties] = await Promise.all([
+  const [leaveTypes, holidays, credentialTypes, truckTypes, groups, truckProperties, profileFields] = await Promise.all([
     referenceRepo.listAllLeaveTypes(),
     referenceRepo.listAllHolidays(),
     complianceRepo.listAllTypes(),
     complianceRepo.truckTypes(),
     fleetRepo.listAllDispatchGroups(),
     fleetRepo.listAllTruckProperties(),
+    fleetRepo.listAllProfileFields(),
   ]);
+  const profileSections = [...new Set(profileFields.map((f) => f.section))];
   // Inductions are credential types under the hood (kind TICKBOX, category
   // "Inductions") but they get their own simple card — burying 20+ of them
   // among the dated-ticket machinery made both unreadable.
@@ -377,6 +383,87 @@ export default async function SetupPage() {
             flags in the Fleet doctor.
           </p>
         </div>
+      </Card>
+
+      {/* Driver profile fields — the onboarding checklist */}
+      <Card title="Driver profile fields" count={profileFields.length}>
+        <ul className="max-h-96 divide-y divide-slate-50 overflow-y-auto">
+          {profileFields.map((f) => (
+            <li key={f.code} className={`px-4 py-1.5 ${f.isActive ? "" : "opacity-50"}`}>
+              <form action={updateProfileFieldAction} className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="hidden" name="code" value={f.code} />
+                <span className="w-40 truncate font-mono text-[12px] font-semibold text-brand-mid" title={f.code}>
+                  {f.code}
+                </span>
+                <input name="label" defaultValue={f.label} className={`${inputCls} min-w-48 flex-1`} />
+                <input name="section" defaultValue={f.section} list="profile-sections" className={`${inputCls} w-44`} title="Card the field appears under on the profile" />
+                <select name="kind" defaultValue={f.kind} className={inputCls} title="What the input is">
+                  <option value="TEXT">Text</option>
+                  <option value="DATE">Date</option>
+                  <option value="YESNO">Tick box</option>
+                </select>
+                <input name="sortOrder" type="number" defaultValue={f.sortOrder} className={`${inputCls} w-16`} title="Sort order" />
+                <SubmitButton className={saveBtn} savedToast={`${f.code} saved`}>
+                  Save
+                </SubmitButton>
+              </form>
+              <div className="mt-0.5 flex items-center gap-3">
+                <form action={toggleProfileFieldActive}>
+                  <input type="hidden" name="code" value={f.code} />
+                  <input type="hidden" name="active" value={f.isActive ? "false" : "true"} />
+                  <SubmitButton
+                    className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    savedToast={f.isActive ? `${f.code} hidden — existing answers stay visible` : `${f.code} reactivated`}
+                  >
+                    {f.isActive ? "Hide" : "Reactivate"}
+                  </SubmitButton>
+                </form>
+                <form action={deleteProfileFieldAction}>
+                  <input type="hidden" name="code" value={f.code} />
+                  <SubmitButton
+                    className="text-[11px] text-rose-600 hover:underline"
+                    savedToast={`${f.code} removed`}
+                    confirmMessage={
+                      f._count.values > 0
+                        ? `Remove "${f.label}" entirely?\n\n${f._count.values} driver answer${f._count.values === 1 ? "" : "s"} will be deleted with it. This can't be undone — use Hide instead to retire the field and keep what's on file.`
+                        : `Remove "${f.label}"? No drivers have it filled in, so nothing else is affected.`
+                    }
+                  >
+                    Remove
+                  </SubmitButton>
+                </form>
+                <span className="text-[11px] text-slate-300">
+                  {f._count.values > 0 ? `${f._count.values} driver${f._count.values === 1 ? "" : "s"}` : "unused"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <datalist id="profile-sections">
+          {profileSections.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+        <form action={createProfileFieldAction} className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          ＋ Add field
+          <input name="code" placeholder="CODE" className={`${inputCls} w-40 font-mono uppercase`} />
+          <input name="label" placeholder="Label" className={`${inputCls} min-w-48 flex-1`} />
+          <input name="section" placeholder="Section" list="profile-sections" className={`${inputCls} w-44`} />
+          <select name="kind" defaultValue="TEXT" className={inputCls}>
+            <option value="TEXT">Text</option>
+            <option value="DATE">Date</option>
+            <option value="YESNO">Tick box</option>
+          </select>
+          <SubmitButton className={saveBtn} savedToast="Profile field added">
+            Add
+          </SubmitButton>
+        </form>
+        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+          The onboarding checklist — every field here appears on each driver&apos;s profile (click a driver&apos;s name on{" "}
+          <b>Fleet → Drivers</b>), grouped by section. Straight from the &ldquo;Onboarding Checklist&rdquo; workbook, minus
+          the columns the app already owns (name, number, depot, work group). Hiding a field takes it off profiles but
+          keeps existing answers visible on drivers that have one.
+        </p>
       </Card>
 
       {/* Truck properties */}

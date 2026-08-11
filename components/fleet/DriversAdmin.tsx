@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   saveDriver,
@@ -222,7 +223,9 @@ export function DriversAdmin({
             {shown.map((d, i) => (
               <tr key={d.id} className={`${i % 2 ? "bg-brand-sand/30" : "bg-white"} ${d.isActive ? "" : "opacity-50"}`}>
                 <td className="px-3 py-1.5 font-medium text-slate-800">
-                  {d.name}
+                  <Link href={`/fleet/drivers/${d.id}`} className="hover:text-brand-mid hover:underline" title="Open profile — onboarding checklist">
+                    {d.name}
+                  </Link>
                   {!d.isActive && <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500">inactive</span>}
                 </td>
                 <td className="px-3 py-1.5 text-slate-500">{d.employeeNo}</td>

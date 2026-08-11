@@ -241,6 +241,71 @@ export async function deleteTruckPropertyAction(formData: FormData): Promise<voi
   refreshTruckProperties();
 }
 
+// ---- driver profile fields --------------------------------------------------
+// The onboarding checklist — the information every driver's profile holds.
+// Fields are identity-coded like everything else; the label, section, kind
+// and order are the editable parts.
+
+function refreshProfileFields() {
+  revalidatePath("/setup");
+  revalidatePath("/fleet/drivers");
+}
+
+function profileFieldFields(formData: FormData) {
+  const kind = ["TEXT", "DATE", "YESNO"].includes(String(formData.get("kind"))) ? String(formData.get("kind")) : "TEXT";
+  return {
+    label: String(formData.get("label") ?? "").trim(),
+    section: String(formData.get("section") ?? "").trim() || "Other",
+    kind,
+    sortOrder: Number(formData.get("sortOrder") ?? 500) || 500,
+  };
+}
+
+export async function createProfileFieldAction(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code") ?? "").trim().toUpperCase().replace(/\s+/g, "_");
+  const { label, section, kind } = profileFieldFields(formData);
+  if (!code || !label) return;
+  await fleetRepo.createProfileField({ code, label, section, kind });
+  await logAction(user, "setup.profileFieldCreate", "DriverProfileField", null, `Added profile field ${code} (${label}, ${section})`);
+  refreshProfileFields();
+}
+
+export async function updateProfileFieldAction(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code"));
+  const fields = profileFieldFields(formData);
+  if (!fields.label) return;
+  await fleetRepo.updateProfileField(code, fields);
+  await logAction(user, "setup.profileFieldUpdate", "DriverProfileField", null, `Updated profile field ${code}`);
+  refreshProfileFields();
+}
+
+export async function toggleProfileFieldActive(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code"));
+  const active = String(formData.get("active")) === "true";
+  await fleetRepo.setProfileFieldActive(code, active);
+  await logAction(user, "setup.profileFieldToggle", "DriverProfileField", null, `${active ? "Reactivated" : "Hid"} profile field ${code}`);
+  refreshProfileFields();
+}
+
+/** Delete a checklist field and every driver's answer to it. */
+export async function deleteProfileFieldAction(formData: FormData): Promise<void> {
+  const user = await requireManager();
+  const code = String(formData.get("code") ?? "").trim();
+  if (!code) return;
+  const { label, answers } = await fleetRepo.deleteProfileField(code);
+  await logAction(
+    user,
+    "setup.profileFieldDelete",
+    "DriverProfileField",
+    null,
+    `Removed profile field ${code} (${label})${answers > 0 ? ` and ${answers} driver answer${answers === 1 ? "" : "s"}` : ""}`,
+  );
+  refreshProfileFields();
+}
+
 export async function createHolidayAction(formData: FormData): Promise<void> {
   const user = await requireManager();
   const date = String(formData.get("date") ?? "");

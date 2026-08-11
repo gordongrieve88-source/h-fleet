@@ -22,6 +22,7 @@ import {
 import { anonymiseDrivers, anonymiseRequested } from "./seed-data/anonymise";
 import { TRUCK_PROPERTIES } from "./seed-data/truck-properties";
 import { INDUCTIONS } from "./seed-data/inductions";
+import { DRIVER_PROFILE_FIELDS } from "./seed-data/driver-profile-fields";
 
 /**
  * The real fleet's drivers are real employees. Anywhere a stranger could reach
@@ -312,6 +313,40 @@ async function main() {
     await prisma.credentialType.upsert({ where: { code: ct.code }, create: ct, update: ct });
   }
   const allDrivers = await prisma.driver.findMany({ select: { id: true }, orderBy: { id: "asc" } });
+
+  // ---- Driver profile (onboarding checklist) ------------------------------
+  // The field catalog is the business's Onboarding Checklist workbook,
+  // column for column (reference data, upserted). Real answers are entered
+  // in the app; the demo sprinkles deterministic synthetic values on a few
+  // telling fields so profiles don't open blank — never data from the
+  // actual workbook.
+  for (let i = 0; i < DRIVER_PROFILE_FIELDS.length; i++) {
+    const f = DRIVER_PROFILE_FIELDS[i];
+    await prisma.driverProfileField.upsert({
+      where: { code: f.code },
+      create: { code: f.code, label: f.label, section: f.section, kind: f.kind, sortOrder: i },
+      update: { label: f.label, section: f.section, kind: f.kind, sortOrder: i },
+    });
+  }
+  const profileRows: { driverId: number; fieldCode: string; value: string }[] = [];
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  allDrivers.forEach(({ id }, i) => {
+    profileRows.push({ driverId: id, fieldCode: "LIC_CLASS", value: i % 3 === 0 ? "HC" : "HR" });
+    // Licences spread over ~3 years ahead; every ~40th expiring soon, one expired.
+    const licDays = i === 17 ? -12 : i % 40 === 5 ? 21 : 90 + ((i * 37) % 1000);
+    profileRows.push({ driverId: id, fieldCode: "LIC_EXPIRY", value: iso(addDays(today, licDays)) });
+    profileRows.push({ driverId: id, fieldCode: "LIC_SCAN", value: "yes" });
+    if (i % 4 !== 1) profileRows.push({ driverId: id, fieldCode: "WC_NUMBER", value: String(400000 + id * 7) });
+    if (i % 4 !== 1) profileRows.push({ driverId: id, fieldCode: "WC_SCAN", value: "yes" });
+    if (i % 29 === 3) profileRows.push({ driverId: id, fieldCode: "TRAINER", value: "yes" });
+    if (i % 31 === 9) profileRows.push({ driverId: id, fieldCode: "ASSESSOR", value: "yes" });
+    profileRows.push({ driverId: id, fieldCode: "LAST_ASSESS", value: iso(addDays(today, -(30 + ((i * 41) % 400))) ) });
+    if (i % 2 === 0) profileRows.push({ driverId: id, fieldCode: "DSS3_SETUP", value: "yes" });
+    if (i % 3 !== 2) profileRows.push({ driverId: id, fieldCode: "SILICA_TAFE", value: "yes" });
+    if (i % 3 !== 2) profileRows.push({ driverId: id, fieldCode: "SPIRO_AUDIO", value: "yes" });
+    if (i % 5 < 3) profileRows.push({ driverId: id, fieldCode: "DAMSTRA_CARD", value: String(10000 + id * 3) });
+  });
+  await prisma.driverProfileValue.createMany({ data: profileRows });
 
   // Inductions (tick boxes — no expiry). Deterministic spread so the demo
   // shows a realistic mix: the Imagecrete pair are specialist (sparse), and

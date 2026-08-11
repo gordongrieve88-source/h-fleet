@@ -169,6 +169,32 @@ export async function setTruckActive(id: string, isActive: boolean): Promise<Act
   }
 }
 
+// ---- driver profile (onboarding checklist) ----------------------------------
+/**
+ * Save one section of a driver's profile page. The form posts every field of
+ * the section: a YESNO checkbox is only present when ticked, so absence
+ * clears it; an emptied text/date input clears too.
+ */
+export async function saveDriverProfileSection(formData: FormData): Promise<void> {
+  const user = await requireEdit();
+  const driverId = Number(formData.get("driverId"));
+  const section = String(formData.get("section") ?? "");
+  const driver = await fleetRepo.getDriver(driverId);
+  if (!driver) return;
+  await requireEditForDepot(driver.depotId, user);
+
+  const fields = (await fleetRepo.driverProfile(driverId)).filter((f) => f.section === section);
+  const entries = fields.map((f) => {
+    const raw = formData.get(f.code);
+    const value = f.kind === "YESNO" ? (raw ? "yes" : "") : String(raw ?? "").trim();
+    return { fieldCode: f.code, value };
+  });
+  await fleetRepo.saveDriverProfileValues(driverId, entries);
+  await logAction(user, "fleet.driver.profile", "Driver", driverId, `Updated ${section} on ${driver.name}'s profile`);
+  revalidatePath(`/fleet/drivers/${driverId}`);
+  revalidatePath("/fleet/drivers");
+}
+
 // ---- truck properties -------------------------------------------------------
 /** The property panel for one truck's edit dialog. */
 export async function loadTruckProperties(truckId: string) {
