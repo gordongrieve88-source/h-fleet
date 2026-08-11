@@ -6,6 +6,7 @@ import { fleetBoardRepo, fleetRepo, complianceRepo } from "@/lib/db/repositories
 import { logAction } from "@/lib/audit";
 import { dateFromKey, parseYmdOrNull, fmtDate } from "@/lib/wfm/date";
 import { statusLabel, TRUCK_STATUS, TIMED_STATUS } from "@/lib/wfm/fleet";
+import { pushRosterChanges } from "@/lib/integrations/rmx-push";
 import type { AppUser } from "@/generated/prisma/client";
 
 export type ActionResult = { ok: boolean; error?: string };
@@ -71,6 +72,7 @@ export async function moveDriver(dateKey: string, driverId: number, toTruck: str
           ? `${driver?.name ?? `#${driverId}`} ⇄ ${toTruck} (swap with ${from})`
           : `${driver?.name ?? `#${driverId}`} ${from} → ${toTruck}`;
     await logAction(user, "fleet.move", "TruckAssignment", null, `${what} on ${fmtDate(date)}`);
+    await pushRosterChanges(dateKey, [{ truck: toTruck, summary: `Driver change: ${what}` }]);
     refresh();
     return { ok: true };
   } catch (e) {
@@ -101,6 +103,9 @@ export async function setTruckStatus(dateKey: string, truckId: string, status: s
       null,
       `${truckId} → ${status} (${statusLabel(status)}) on ${fmtDate(date)}${extras.length ? ` — ${extras.join(", ")}` : ""}`,
     );
+    await pushRosterChanges(dateKey, [
+      { truck: truckId, summary: `${status} — ${statusLabel(status)}${clearedDriver != null ? ", driver released" : ""}`, status },
+    ]);
     refresh();
     return { ok: true };
   } catch (e) {
@@ -146,6 +151,15 @@ export async function setTruckStatusBulk(
       `${ids.join(", ")} → ${status} (${statusLabel(status)})${clean ? ` at ${clean}` : ""} on ${fmtDate(date)}` +
         `${released ? ` — ${released} driver${released === 1 ? "" : "s"} released to spares` : ""}`,
     );
+    await pushRosterChanges(
+      dateKey,
+      ids.map((truck) => ({
+        truck,
+        summary: `${status} — ${statusLabel(status)}${clean ? ` at ${clean}` : ""}`,
+        status,
+        time: clean || undefined,
+      })),
+    );
     refresh();
     return { ok: true };
   } catch (e) {
@@ -186,6 +200,9 @@ export async function setTruckStatusTime(dateKey: string, truckId: string, statu
       null,
       clean ? `${truckId} planned time ${clean} on ${fmtDate(date)}` : `${truckId} planned time cleared on ${fmtDate(date)}`,
     );
+    await pushRosterChanges(dateKey, [
+      { truck: truckId, summary: clean ? `Planned time ${clean}` : "Planned time cleared", time: clean || undefined },
+    ]);
     refresh();
     return { ok: true };
   } catch (e) {
@@ -201,6 +218,7 @@ export async function clearTruckDriver(dateKey: string, truckId: string): Promis
     const date = dateFromKey(dateKey);
     await fleetBoardRepo.applyChanges(date, [{ truckId, driverId: null }], user.id);
     await logAction(user, "fleet.clear", "TruckAssignment", null, `Cleared driver off ${truckId} on ${fmtDate(date)}`);
+    await pushRosterChanges(dateKey, [{ truck: truckId, summary: "Driver cleared off the truck" }]);
     refresh();
     return { ok: true };
   } catch (e) {
