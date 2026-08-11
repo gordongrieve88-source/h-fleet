@@ -187,7 +187,7 @@ describe("day lifecycle", () => {
   it("dropDriverFromRange clears the driver and marks the truck driver-not-in", async () => {
     await fleetBoardRepo.materialise(DAY, null);
     const n = await fleetBoardRepo.dropDriverFromRange(fx.driver1, DAY, DAY);
-    expect(n).toBe(1);
+    expect(n).toHaveLength(1);
     const row = await savedRow("T1");
     expect(row?.driverId).toBeNull();
     expect(row?.status).toBe("OFF-ND");

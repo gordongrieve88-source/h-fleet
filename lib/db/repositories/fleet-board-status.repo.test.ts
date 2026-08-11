@@ -90,6 +90,25 @@ describe("a breakdown plans forward", () => {
   });
 });
 
+describe("leave drops the driver off saved days", () => {
+  it("turns the truck OFF-ND on an already-saved day, clears the time, reseats FTO", async () => {
+    await fleetBoardRepo.materialise(MON, null); // saved: T1 leads with D1 aboard
+    await fleetBoardRepo.applyChanges(MON, [{ truckId: "T1", status: "ON-LS", statusTime: "09:00" }], null);
+    const dropped = await fleetBoardRepo.dropDriverFromRange(d1, MON, MON);
+    expect(dropped).toEqual([{ date: MON, truckId: "T1" }]);
+    const row = await rowFor(MON, "T1");
+    expect(row.status).toBe("OFF-ND");
+    expect(row.driverId).toBeNull();
+    expect(row.statusTime).toBeNull();
+    expect(row.fto).toBe(false); // FTO handed to the next on-road truck
+    expect((await rowFor(MON, "T2")).fto).toBe(true);
+  });
+
+  it("does nothing on unsaved days — synthesis handles those", async () => {
+    expect(await fleetBoardRepo.dropDriverFromRange(d1, TUE, TUE)).toEqual([]);
+  });
+});
+
 describe("timed statuses", () => {
   it("keeps the planned time while the status is timed, clears it when not", async () => {
     await fleetBoardRepo.setStatus(MON, "T1", "ON-LS", null);

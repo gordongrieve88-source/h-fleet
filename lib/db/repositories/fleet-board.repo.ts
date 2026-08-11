@@ -459,13 +459,31 @@ export const fleetBoardRepo = {
     );
   },
 
-  /** Drop approved-leave drivers from a saved day (used after leave approval). */
-  async dropDriverFromRange(driverId: number, start: Date, end: Date): Promise<number> {
-    const hit = await prisma.truckAssignment.updateMany({
-      where: { driverId, date: { gte: start, lte: end } },
-      data: { driverId: null, status: "OFF-ND" },
-    });
-    return hit.count;
+  /**
+   * Drop a driver off every SAVED day in a range (leave booked or approved):
+   * their trucks go OFF-ND, planned times clear, and a truck that was the
+   * plant's first-truck-out hands the marker on. Returns what was affected so
+   * callers can tell the allocators. Unsaved days need nothing — synthesis
+   * drops approved leave by itself.
+   */
+  async dropDriverFromRange(driverId: number, start: Date, end: Date): Promise<{ date: Date; truckId: string }[]> {
+    return retryOnUniqueClash(() =>
+      prisma.$transaction(async (tx) => {
+        const affected = await tx.truckAssignment.findMany({
+          where: { driverId, date: { gte: start, lte: end } },
+          select: { date: true, truckId: true, truck: { select: { block: true } } },
+        });
+        if (affected.length === 0) return [];
+        await tx.truckAssignment.updateMany({
+          where: { driverId, date: { gte: start, lte: end } },
+          data: { driverId: null, status: "OFF-ND", statusTime: null },
+        });
+        for (const a of affected) {
+          await this.recomputeFto(tx, a.date, a.truck.block);
+        }
+        return affected.map((a) => ({ date: a.date, truckId: a.truckId }));
+      }),
+    );
   },
 
   /** Discard a day's edits — reverts to synthesis. */

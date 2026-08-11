@@ -5,7 +5,8 @@ import { requireApprover, requireEditForDepot, getDepotScope } from "@/lib/auth"
 import { depotInScope } from "@/lib/auth/scope";
 import { driverLeaveRepo, fleetBoardRepo, notificationRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
-import { fmtRange } from "@/lib/wfm/date";
+import { pushRosterChanges } from "@/lib/integrations/rmx-push";
+import { fmtRange , ymd } from "@/lib/wfm/date";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -34,7 +35,19 @@ export async function decideDriverLeave(id: number, approve: boolean, note: stri
   if (approve) {
     // Approved leave wins: drop the driver off any already-saved board days.
     // Unsaved days pick the leave up automatically via the roll-forward.
-    await fleetBoardRepo.dropDriverFromRange(rec.driverId, rec.startDate, rec.endDate);
+    const dropped = await fleetBoardRepo.dropDriverFromRange(rec.driverId, rec.startDate, rec.endDate);
+    // Tell the allocators which trucks just lost their driver, day by day.
+    const byDay = new Map<string, string[]>();
+    for (const hit of dropped) {
+      const k = ymd(hit.date);
+      byDay.set(k, [...(byDay.get(k) ?? []), hit.truckId]);
+    }
+    for (const [dayKey, trucks] of byDay) {
+      await pushRosterChanges(
+        dayKey,
+        trucks.map((truck) => ({ truck, summary: `OFF-ND — driver on ${rec.leaveTypeCode} leave (approved)`, status: "OFF-ND" })),
+      );
+    }
   }
   const range = fmtRange(rec.startDate, rec.endDate);
   await logAction(
