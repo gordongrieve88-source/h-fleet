@@ -50,6 +50,8 @@ export function TruckRow({
   placeActive,
   onPlace,
   actualStart,
+  selected,
+  onToggleSelect,
 }: {
   row: TruckAssignmentVM;
   /** Plant the truck is lent to today (from the allocation import), or null at home. */
@@ -77,6 +79,9 @@ export function TruckRow({
   onPlace: () => void;
   /** Observed departure from telematics, "HH:MM" — null when not fed. */
   actualStart: string | null;
+  /** Bulk-select: ticked into the multi-truck status bar. */
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   const [over, setOver] = useState(false);
   const kind = statusKind(row.status);
@@ -99,12 +104,15 @@ export function TruckRow({
       }}
       onClick={(e) => {
         // While a driver is picked up, the whole row is a tap target — except
-        // its own controls (status select, clear ×), which keep their meaning.
+        // its own controls (status select, tick box, clear ×), which keep
+        // their meaning.
         if (!placeActive || !canEdit) return;
-        if ((e.target as HTMLElement).closest("select,button")) return;
+        if ((e.target as HTMLElement).closest("select,button,input,label")) return;
         onPlace();
       }}
-      className={`group grid grid-cols-[10px_60px_1fr_auto_auto] items-center gap-2 rounded-lg border px-2 py-1.5 ${
+      className={`group grid items-center gap-2 rounded-lg border px-2 py-1.5 ${
+        canEdit ? "grid-cols-[14px_10px_60px_1fr_auto_auto]" : "grid-cols-[10px_60px_1fr_auto_auto]"
+      } ${
         needsCover
           ? "border-amber-300 bg-amber-50"
           : row.fto
@@ -114,6 +122,15 @@ export function TruckRow({
         placeActive && !pickedDriver ? "cursor-pointer hover:ring-2 hover:ring-brand-mid" : ""
       }`}
     >
+      {canEdit && (
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          title="Select for a bulk status change"
+          className={`h-3 w-3 accent-[#00843d] ${selected ? "" : "opacity-30 transition-opacity focus:opacity-100 group-hover:opacity-100"}`}
+        />
+      )}
       <span
         title={TRUCK_STATUS[row.status as keyof typeof TRUCK_STATUS]?.label ?? row.status}
         className={`h-2.5 w-2.5 rounded-full ${DOT[kind]}`}

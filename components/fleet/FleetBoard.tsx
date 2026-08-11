@@ -11,7 +11,16 @@ import { TruckRow } from "./TruckRow";
 import { DriverChip } from "./DriverChip";
 import { PickerField } from "./DatePicker";
 import { useToast } from "@/components/Toast";
-import { moveDriver, setTruckStatus, setTruckStatusTime, setFirstTruckOut, clearTruckDriver, resetBoardDay } from "@/app/(app)/fleet/actions";
+import {
+  moveDriver,
+  setTruckStatus,
+  setTruckStatusTime,
+  setTruckStatusBulk,
+  setFirstTruckOut,
+  clearTruckDriver,
+  resetBoardDay,
+} from "@/app/(app)/fleet/actions";
+import { TIMED_STATUS } from "@/lib/wfm/fleet";
 
 const STATUS_CODES = Object.keys(TRUCK_STATUS);
 
@@ -64,6 +73,26 @@ export function FleetBoard({
   // tap-to-place (the only way on touch screens, where HTML5 drag never fires).
   const [drag, setDrag] = useState<number | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
+  // Bulk-select: tick several trucks (usually one plant) and set their
+  // status in one go — half the fleet on early finish is one action.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState("ON-EF");
+  const [bulkTime, setBulkTime] = useState("");
+
+  // A new day is a new selection (state-reset-on-prop-change, done in render).
+  const [selectedDate, setSelectedDate] = useState(date);
+  if (selectedDate !== date) {
+    setSelectedDate(date);
+    setSelected(new Set());
+  }
+
+  const toggleSelect = (truckId: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(truckId)) next.delete(truckId);
+      else next.add(truckId);
+      return next;
+    });
 
   const driverById = useMemo(() => {
     const m = new Map<number, DriverVM>();
@@ -272,7 +301,27 @@ export function FleetBoard({
                     return (
                       <div key={block} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
                         <div className="mb-2 flex items-center justify-between">
-                          <div className="text-sm font-semibold text-brand-deep">{block}</div>
+                          <div className="flex items-center gap-1.5 text-sm font-semibold text-brand-deep">
+                            {canEdit && (
+                              <input
+                                type="checkbox"
+                                checked={bRows.every((r) => selected.has(r.truck)) && bRows.length > 0}
+                                onChange={(e) =>
+                                  setSelected((prev) => {
+                                    const next = new Set(prev);
+                                    for (const r of bRows) {
+                                      if (e.target.checked) next.add(r.truck);
+                                      else next.delete(r.truck);
+                                    }
+                                    return next;
+                                  })
+                                }
+                                title={`Select every truck in ${block} for a bulk status change`}
+                                className="h-3 w-3 accent-[#00843d]"
+                              />
+                            )}
+                            {block}
+                          </div>
                           <AvailBadge pct={ba.pct} on={ba.on} total={ba.total} />
                         </div>
                         <div className="flex flex-col gap-1.5">
@@ -297,6 +346,8 @@ export function FleetBoard({
                               placeActive={rowEditable(a.truck) && picked != null}
                               onPlace={() => picked != null && doMove(picked, a.truck)}
                               actualStart={actualStarts[a.truck] ?? null}
+                              selected={selected.has(a.truck)}
+                              onToggleSelect={() => toggleSelect(a.truck)}
                             />
                           ))}
                         </div>
@@ -390,6 +441,57 @@ export function FleetBoard({
           </div>
         </aside>
       </div>
+
+      {/* Bulk status bar — shows while trucks are ticked. */}
+      {selected.size > 0 && !pickedDriver && (
+        <div className="print-hide fixed bottom-5 left-1/2 z-40 -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-full border border-brand-mid bg-white py-2 pl-4 pr-2 shadow-lg">
+            <span className="whitespace-nowrap text-sm text-slate-600">
+              <b className="text-brand-deep">{selected.size}</b> truck{selected.size === 1 ? "" : "s"} →
+            </span>
+            <select
+              value={bulkStatus}
+              onChange={(e) => setBulkStatus(e.target.value)}
+              className="rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs font-bold text-slate-700"
+              title="Status to apply to every ticked truck"
+            >
+              {STATUS_CODES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            {bulkStatus in TIMED_STATUS && (
+              <input
+                type="time"
+                value={bulkTime}
+                onChange={(e) => setBulkTime(e.target.value)}
+                title={TIMED_STATUS[bulkStatus]}
+                className="rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs font-semibold tabular-nums text-amber-800"
+              />
+            )}
+            <button
+              onClick={() =>
+                go(async () => {
+                  const res = await setTruckStatusBulk(date, [...selected], bulkStatus, bulkTime);
+                  if (res.ok) setSelected(new Set());
+                  return res;
+                })
+              }
+              disabled={pending}
+              className="rounded-full bg-brand-mid px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-deep disabled:opacity-50"
+            >
+              Apply
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tap-to-place bar — shows while a driver is picked up. */}
       {pickedDriver && (

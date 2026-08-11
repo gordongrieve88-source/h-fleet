@@ -5,7 +5,7 @@ import { requireEdit, requireEditForDepot, requireUnrestrictedEdit } from "@/lib
 import { fleetBoardRepo, fleetRepo, complianceRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 import { dateFromKey, parseYmdOrNull, fmtDate } from "@/lib/wfm/date";
-import { statusLabel, TRUCK_STATUS } from "@/lib/wfm/fleet";
+import { statusLabel, TRUCK_STATUS, TIMED_STATUS } from "@/lib/wfm/fleet";
 import type { AppUser } from "@/generated/prisma/client";
 
 export type ActionResult = { ok: boolean; error?: string };
@@ -100,6 +100,51 @@ export async function setTruckStatus(dateKey: string, truckId: string, status: s
       "TruckAssignment",
       null,
       `${truckId} → ${status} (${statusLabel(status)}) on ${fmtDate(date)}${extras.length ? ` — ${extras.join(", ")}` : ""}`,
+    );
+    refresh();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e).replace(/^Error:\s*/, "").slice(0, 160) };
+  }
+}
+
+/**
+ * One status for several trucks at once (bulk-select on the board) — e.g.
+ * half the plant on early finish. Runs the same per-truck cascade as a
+ * single change (driver release, breakdown planning, FTO reseating), plus
+ * the shared planned time when the status is a timed one.
+ */
+export async function setTruckStatusBulk(
+  dateKey: string,
+  truckIds: string[],
+  status: string,
+  statusTime?: string,
+): Promise<ActionResult> {
+  const user = await requireEdit();
+  if (!parseYmdOrNull(dateKey)) return badDate();
+  if (!(status.toUpperCase() in TRUCK_STATUS)) return { ok: false, error: "Unknown status." };
+  const ids = [...new Set(truckIds)].slice(0, 200);
+  if (ids.length === 0) return { ok: false, error: "No trucks selected." };
+  const clean = (statusTime ?? "").trim();
+  if (clean && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(clean)) return { ok: false, error: "Time must be HH:MM." };
+  try {
+    const date = dateFromKey(dateKey);
+    for (const truckId of ids) await requireEditForTruck(truckId, user);
+    let released = 0;
+    for (const truckId of ids) {
+      const { clearedDriver } = await fleetBoardRepo.setStatus(date, truckId, status, user.id);
+      if (clearedDriver != null) released++;
+      if (clean && status.toUpperCase() in TIMED_STATUS) {
+        await fleetBoardRepo.applyChanges(date, [{ truckId, statusTime: clean }], user.id);
+      }
+    }
+    await logAction(
+      user,
+      "fleet.status",
+      "TruckAssignment",
+      null,
+      `${ids.join(", ")} → ${status} (${statusLabel(status)})${clean ? ` at ${clean}` : ""} on ${fmtDate(date)}` +
+        `${released ? ` — ${released} driver${released === 1 ? "" : "s"} released to spares` : ""}`,
     );
     refresh();
     return { ok: true };
