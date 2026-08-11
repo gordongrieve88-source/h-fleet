@@ -137,9 +137,11 @@ export function TruckRow({
       />
       <span className="font-mono text-[12px] font-semibold text-slate-500">
         <span className={row.fto ? "text-brand-deep" : ""}>{row.truck}</span>
+        {/* Stacked under the code — the column is only 60px, and anything
+            inline here runs into the driver's name. */}
         {row.fto ? (
           <span
-            className="ml-1 rounded bg-brand-mid px-1 py-px align-middle font-sans text-[8.5px] font-bold tracking-wide text-white"
+            className="mt-0.5 block w-fit rounded bg-brand-mid px-1 py-px font-sans text-[8.5px] font-bold tracking-wide text-white"
             title="First truck out — leads the plant today; the cycle follows on from here"
           >
             FTO
@@ -149,7 +151,7 @@ export function TruckRow({
           isOnRoad(row.status) && (
             <button
               onClick={onSetFto}
-              className="ml-1 rounded border border-brand-mid/40 px-1 py-px align-middle font-sans text-[8.5px] font-bold tracking-wide text-brand-mid opacity-0 transition-opacity hover:bg-brand-mid hover:text-white focus:opacity-100 group-hover:opacity-100"
+              className="mt-0.5 block w-fit rounded border border-brand-mid/40 px-1 py-px font-sans text-[8.5px] font-bold tracking-wide text-brand-mid opacity-0 transition-opacity hover:bg-brand-mid hover:text-white focus:opacity-100 group-hover:opacity-100"
               title="Make this the first truck out — overrides the cycle for today; tomorrow follows on from here"
             >
               →FTO
