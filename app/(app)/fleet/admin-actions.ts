@@ -125,6 +125,7 @@ export async function saveTruck(input: {
   region: string;
   block: string;
   type: string;
+  rosterGroup: number;
   defaultDriverId: number | null;
 }): Promise<ActionResult> {
   const user = await requireEdit();
@@ -136,6 +137,8 @@ export async function saveTruck(input: {
       region: input.region,
       block: input.block.trim(),
       type: input.type.trim() || "Agitator",
+      // The fleet's norm is roster group 2 — nonsense values fall back to it.
+      rosterGroup: Number.isInteger(input.rosterGroup) && input.rosterGroup >= 1 && input.rosterGroup <= 9 ? input.rosterGroup : 2,
       defaultDriverId: input.defaultDriverId,
     };
     await requireEditForDepot(input.depotId, user); // the depot the truck will belong to

@@ -85,6 +85,7 @@ export type TruckRowVM = {
   region: string;
   block: string;
   type: string;
+  rosterGroup: number;
   defaultDriverId: number | null;
   defaultDriver: string | null;
   isActive: boolean;
@@ -227,10 +228,11 @@ function TruckDialog({
   const [region, setRegion] = useState(row?.region ?? regions[0] ?? "");
   const [block, setBlock] = useState(row?.block ?? "");
   const [type, setType] = useState(row?.type ?? "Agitator");
+  const [rosterGroup, setRosterGroup] = useState(row?.rosterGroup ?? 2);
   const [defaultDriverId, setDefaultDriverId] = useState<number | null>(row?.defaultDriverId ?? null);
   const { run, pending, error } = useAction();
 
-  const submit = () => run(() => saveTruck({ id, isNew: !row, depotId, region, block, type, defaultDriverId }), onClose);
+  const submit = () => run(() => saveTruck({ id, isNew: !row, depotId, region, block, type, rosterGroup, defaultDriverId }), onClose);
 
   return (
     <Modal title={row ? `Edit ${row.id}` : "Add truck"} onClose={onClose} wide={!!row}>
@@ -279,6 +281,16 @@ function TruckDialog({
           <input className={input} value={block} onChange={(e) => setBlock(e.target.value)} placeholder="e.g. Greenacre Project" />
         </Field>
       </div>
+      <Field label="Roster group">
+        <select className={input} value={rosterGroup} onChange={(e) => setRosterGroup(Number(e.target.value))}>
+          {[1, 2, 3, 4].map((g) => (
+            <option key={g} value={g}>
+              Roster group {g}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-[11px] text-slate-400">Which roster rotation this truck runs in — group 2 is the fleet&apos;s norm.</p>
+      </Field>
       <Field label="Default driver (optional)">
         <select className={input} value={defaultDriverId ?? ""} onChange={(e) => setDefaultDriverId(e.target.value ? Number(e.target.value) : null)}>
           <option value="">— none —</option>

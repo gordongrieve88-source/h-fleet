@@ -278,6 +278,8 @@ model Truck {
   /// Vehicle function (Agitator, Tipper, …). Free data — values typed in
   /// admin appear in the board chips and wallboard breakdowns automatically.
   type            String  @default("Agitator")
+  /// Which roster rotation the truck runs in. The fleet's norm is group 2.
+  rosterGroup     Int     @default(2)
   defaultDriverId Int?
   sortOrder       Int     @default(0)
   isActive        Boolean @default(true)
