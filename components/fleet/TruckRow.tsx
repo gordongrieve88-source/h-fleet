@@ -52,6 +52,7 @@ export function TruckRow({
   actualStart,
   selected,
   onToggleSelect,
+  acks,
 }: {
   row: TruckAssignmentVM;
   /** Lent-out marker: "@ Camellia" at home, "from Greenacre" in the host card. */
@@ -82,6 +83,8 @@ export function TruckRow({
   /** Bulk-select: ticked into the multi-truck status bar. */
   selected: boolean;
   onToggleSelect: () => void;
+  /** Allocator acknowledgements from the RMX Portal — board changes actioned over there. */
+  acks: { summary: string; by: string; at: string }[];
 }) {
   const [over, setOver] = useState(false);
   const kind = statusKind(row.status);
@@ -159,6 +162,16 @@ export function TruckRow({
               →FTO
             </button>
           )
+        )}
+        {acks.length > 0 && (
+          <span
+            className="mt-0.5 block w-fit rounded bg-emerald-100 px-1 py-px font-sans text-[8.5px] font-bold tracking-wide text-emerald-700"
+            title={acks
+              .map((k) => `${k.summary} — actioned by ${k.by}, ${new Date(k.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`)
+              .join("\n")}
+          >
+            ✓ ALLOC{acks.length > 1 ? ` ×${acks.length}` : ""}
+          </span>
         )}
         {typeTag && <span className="mt-0.5 block font-sans text-[9px] font-medium uppercase tracking-wide text-slate-400">{typeTag}</span>}
         {awayTag && (

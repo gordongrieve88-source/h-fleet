@@ -330,6 +330,21 @@ model DriverProfileValue {
   @@index([fieldCode])
 }
 
+/// An allocator's acknowledgement, pushed back from the RMX Portal: "your
+/// board change for this truck on this day has been actioned". Keyed by the
+/// RMX change id, so re-sends upsert and a reopen deletes cleanly. Shown as
+/// a green tick on the board row.
+model AllocatorAck {
+  changeId   String   @id
+  date       DateTime // UTC midnight; treated as a date
+  truckId    String
+  summary    String
+  actionedBy String
+  actionedAt DateTime
+
+  @@index([date, truckId])
+}
+
 /// The tick-box attributes a truck can carry — the allocation system's
 /// property codes (Automatic Transmission, UHF Radio Fitted, PBS, …). The
 /// catalog is reference data managed in Setup; each truck ticks its own on

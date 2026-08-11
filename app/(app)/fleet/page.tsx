@@ -2,6 +2,7 @@ import { canEdit, getDepotScope } from "@/lib/auth";
 import { fleetBoardRepo, driverLeaveRepo, referenceRepo, complianceRepo, integrationRepo } from "@/lib/db/repositories";
 import { loadFleetCatalog } from "@/lib/fleet/catalog";
 import { getViewGroup } from "@/lib/fleet/view-group";
+import { prisma } from "@/lib/db/client";
 import { isOnRoad } from "@/lib/wfm/fleet";
 import { addDaysUTC, fmtDate, parseYmdOrNull, todayUTC, ymd } from "@/lib/wfm/date";
 import {
@@ -32,6 +33,12 @@ export default async function FleetBoardPage({ searchParams }: { searchParams: P
     getDepotScope(),
     integrationRepo.telemetryForDay(date),
   ]);
+  // Allocator acknowledgements pushed back from the RMX Portal for this day.
+  const acks = await prisma.allocatorAck.findMany({ where: { date }, orderBy: { actionedAt: "asc" } });
+  const acksByTruck: Record<string, { summary: string; by: string; at: string }[]> = {};
+  for (const a of acks) {
+    (acksByTruck[a.truckId] ??= []).push({ summary: a.summary, by: a.actionedBy, at: a.actionedAt.toISOString() });
+  }
   const actualByTruck = new Map(telemetry.map((t) => [t.truckId, t.actualStart]));
   const telemetryIsSample = telemetry.some((t) => t.isSample);
   // Depot names this user may edit; null = all of them.
@@ -145,6 +152,7 @@ export default async function FleetBoardPage({ searchParams }: { searchParams: P
         isCaptured={isCaptured}
         actualStarts={Object.fromEntries(actualByTruck)}
         telemetryIsSample={telemetryIsSample}
+        allocatorAcks={acksByTruck}
       />
     </div>
   );

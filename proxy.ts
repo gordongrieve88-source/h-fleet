@@ -66,6 +66,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Everything except the demo gate, the auth flow, the health probe, the BI
-  // feed (which carries its own bearer token), and static assets.
-  matcher: ["/((?!gate|auth/|api/health|api/bi/|_next/|favicon\\.ico|icon\\.png|logo\\.png).*)"],
+  // feed and machine hooks (which carry their own bearer tokens), and static
+  // assets.
+  matcher: ["/((?!gate|auth/|api/health|api/bi/|api/hooks/|_next/|favicon\\.ico|icon\\.png|logo\\.png).*)"],
 };

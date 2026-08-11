@@ -48,6 +48,7 @@ export function FleetBoard({
   isCaptured,
   actualStarts,
   telemetryIsSample,
+  allocatorAcks,
 }: {
   date: string;
   catalog: FleetCatalogVM;
@@ -64,6 +65,8 @@ export function FleetBoard({
   actualStarts: Record<string, string | null>;
   /** True when today's telemetry came from a demonstration provider. */
   telemetryIsSample: boolean;
+  /** Allocator acknowledgements pushed back from the RMX Portal, per truck. */
+  allocatorAcks: Record<string, { summary: string; by: string; at: string }[]>;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -381,6 +384,7 @@ export function FleetBoard({
                               actualStart={actualStarts[a.truck] ?? null}
                               selected={selected.has(a.truck)}
                               onToggleSelect={() => toggleSelect(a.truck)}
+                              acks={allocatorAcks[a.truck] ?? []}
                             />
                           ))}
                         </div>
