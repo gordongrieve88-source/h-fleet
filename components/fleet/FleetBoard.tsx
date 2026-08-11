@@ -11,7 +11,7 @@ import { TruckRow } from "./TruckRow";
 import { DriverChip } from "./DriverChip";
 import { PickerField } from "./DatePicker";
 import { useToast } from "@/components/Toast";
-import { moveDriver, setTruckStatus, clearTruckDriver, resetBoardDay } from "@/app/(app)/fleet/actions";
+import { moveDriver, setTruckStatus, setTruckStatusTime, clearTruckDriver, resetBoardDay } from "@/app/(app)/fleet/actions";
 
 const STATUS_CODES = Object.keys(TRUCK_STATUS);
 
@@ -284,6 +284,7 @@ export function FleetBoard({
                               statusCodes={STATUS_CODES}
                               canEdit={rowEditable(a.truck)}
                               onStatus={(s) => go(() => setTruckStatus(date, a.truck, s))}
+                              onStatusTime={(t) => go(() => setTruckStatusTime(date, a.truck, t))}
                               onClearDriver={() => go(() => clearTruckDriver(date, a.truck))}
                               dragActive={drag != null}
                               onDragStartDriver={() => a.driverId != null && setDrag(a.driverId)}

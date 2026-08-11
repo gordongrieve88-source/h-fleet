@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { TruckAssignmentVM, DriverVM } from "@/lib/fleet/catalog";
-import { TRUCK_STATUS, statusKind } from "@/lib/wfm/fleet";
+import { TRUCK_STATUS, TIMED_STATUS, statusKind } from "@/lib/wfm/fleet";
 import { startVarianceMinutes } from "@/lib/wfm/analytics";
 import { DriverChip } from "./DriverChip";
 
@@ -39,6 +39,7 @@ export function TruckRow({
   statusCodes,
   canEdit,
   onStatus,
+  onStatusTime,
   onClearDriver,
   onDragStartDriver,
   onDropDriver,
@@ -58,6 +59,8 @@ export function TruckRow({
   statusCodes: string[];
   canEdit: boolean;
   onStatus: (s: string) => void;
+  /** Save the planned time behind a timed status (late start / early finish / service / dedag). */
+  onStatusTime: (t: string) => void;
   onClearDriver: () => void;
   onDragStartDriver: () => void;
   onDropDriver: () => void;
@@ -75,6 +78,7 @@ export function TruckRow({
   const [over, setOver] = useState(false);
   const kind = statusKind(row.status);
   const needsCover = !driver && row.status.toUpperCase() === "OFF-ND";
+  const timedLabel = TIMED_STATUS[row.status.toUpperCase()] ?? null;
 
   return (
     <div
@@ -147,20 +151,47 @@ export function TruckRow({
       </span>
 
       {canEdit ? (
-        <select
-          value={row.status}
-          onChange={(e) => onStatus(e.target.value)}
-          title="Truck status"
-          className={`max-w-[92px] rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10.5px] font-bold ${SELECT_TEXT[kind]}`}
-        >
-          {statusCodes.map((c) => (
-            <option key={c} value={c} className="text-slate-700">
-              {c}
-            </option>
-          ))}
-        </select>
+        <span className="flex flex-col items-end gap-0.5">
+          <select
+            value={row.status}
+            onChange={(e) => onStatus(e.target.value)}
+            title="Truck status"
+            className={`max-w-[92px] rounded-md border border-slate-200 bg-white px-1 py-0.5 text-[10.5px] font-bold ${SELECT_TEXT[kind]}`}
+          >
+            {/* A historical code no longer on the menu (e.g. ON-FTO) stays
+                selectable-as-is so old days render truthfully. */}
+            {!statusCodes.includes(row.status) && (
+              <option value={row.status} className="text-slate-400">
+                {row.status}
+              </option>
+            )}
+            {statusCodes.map((c) => (
+              <option key={c} value={c} className="text-slate-700">
+                {c}
+              </option>
+            ))}
+          </select>
+          {timedLabel && (
+            <input
+              type="time"
+              defaultValue={row.statusTime ?? ""}
+              title={timedLabel}
+              onBlur={(e) => {
+                if (e.target.value !== (row.statusTime ?? "")) onStatusTime(e.target.value);
+              }}
+              className="w-[92px] rounded-md border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10.5px] font-semibold tabular-nums text-amber-800 focus:border-brand-mid focus:outline-none"
+            />
+          )}
+        </span>
       ) : (
-        <span className={`px-1 text-[10.5px] font-bold ${SELECT_TEXT[kind]}`}>{row.status}</span>
+        <span className="flex flex-col items-end px-1">
+          <span className={`text-[10.5px] font-bold ${SELECT_TEXT[kind]}`}>{row.status}</span>
+          {timedLabel && row.statusTime && (
+            <span className="text-[10px] font-semibold tabular-nums text-amber-700" title={timedLabel}>
+              {row.statusTime}
+            </span>
+          )}
+        </span>
       )}
     </div>
   );

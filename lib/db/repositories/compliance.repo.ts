@@ -177,6 +177,17 @@ export const complianceRepo = {
       await prisma.driverCredential.deleteMany({ where: { driverId, typeCode } });
     }
   },
+  /**
+   * The free-text detail on a held tick box — card number, certificate year,
+   * booked date. Only meaningful while the box is ticked; unticking deletes
+   * the row, detail and all.
+   */
+  async setTickboxDetail(driverId: number, typeCode: string, reference: string) {
+    await prisma.driverCredential.updateMany({
+      where: { driverId, typeCode },
+      data: { reference: reference.trim() || null },
+    });
+  },
 
   /** Distinct truck types in the fleet — the options for requiredForTruckType. */
   async truckTypes(): Promise<string[]> {

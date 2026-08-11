@@ -169,6 +169,22 @@ export async function setTruckActive(id: string, isActive: boolean): Promise<Act
   }
 }
 
+/** Free-text detail on a held tick box (card number, cert year, booked date). */
+export async function setCompetencyDetail(driverId: number, typeCode: string, reference: string): Promise<ActionResult> {
+  const user = await requireEdit();
+  try {
+    const driver = await fleetRepo.getDriver(driverId);
+    if (!driver) return { ok: false, error: "Unknown driver." };
+    await requireEditForDepot(driver.depotId, user);
+    await complianceRepo.setTickboxDetail(driverId, typeCode, reference);
+    await logAction(user, "fleet.driver.competency", "DriverCredential", driverId, `Noted ${typeCode} detail for ${driver.name}`);
+    revalidatePath("/fleet/drivers");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 // ---- driver profile (onboarding checklist) ----------------------------------
 /**
  * Save one section of a driver's profile page. The form posts every field of

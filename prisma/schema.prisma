@@ -361,9 +361,13 @@ model TruckAssignment {
   id       Int      @id @default(autoincrement())
   date     DateTime // UTC midnight; treated as a date
   truckId  String
-  status   String   @default("ON") // ON / ON-FTO / … / OFF-BD / OFF-ND (lib/wfm/fleet.ts)
+  status   String   @default("ON") // ON / ON-LS / … / OFF-BD / OFF-ND (lib/wfm/fleet.ts)
   driverId Int?
   time     String?
+  /// The planned time behind a timed status — a late start's start, an early
+  /// finish's finish, service/dedag either way ("HH:MM"). Cleared when the
+  /// status stops being a timed one.
+  statusTime String?
   /// Where the truck works THIS day (from the Syncrotess Location column) —
   /// often its home plant, but trucks get lent across plants day by day.
   workLocation String?

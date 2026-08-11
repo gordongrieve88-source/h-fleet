@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "../client";
 import { driverLeaveRepo } from "./driver-leave.repo";
+import { statusKind, TIMED_STATUS } from "@/lib/wfm/fleet";
 
 export interface FleetBoardRow {
   truck: string;
@@ -9,6 +10,8 @@ export interface FleetBoardRow {
   time: string | null;
   /** The plant the truck works this day (imported), when it's saved. */
   workLocation: string | null;
+  /** Planned time behind a timed status (late start / early finish / service / dedag). */
+  statusTime: string | null;
 }
 
 /** What a driver move actually did — feeds the audit line. */
@@ -50,7 +53,7 @@ export const fleetBoardRepo = {
   async getBoard(date: Date, group: string | null = null): Promise<FleetBoardRow[]> {
     const saved = await prisma.truckAssignment.findMany({
       where: { date, ...(group === null ? {} : { truck: { depot: { dispatchGroupCode: group } } }) },
-      select: { truckId: true, status: true, driverId: true, time: true, workLocation: true },
+      select: { truckId: true, status: true, driverId: true, time: true, workLocation: true, statusTime: true },
     });
     if (saved.length > 0) {
       return saved.map((a) => ({
@@ -59,22 +62,35 @@ export const fleetBoardRepo = {
         driverId: a.driverId,
         time: a.time,
         workLocation: a.workLocation,
+        statusTime: a.statusTime,
       }));
     }
     return this.synthesise(date, prisma, group);
   },
 
   async synthesise(date: Date, db: Db = prisma, group: string | null = null): Promise<FleetBoardRow[]> {
-    const [trucks, onLeave] = await Promise.all([
+    const [trucks, onLeave, lastSaved] = await Promise.all([
       db.truck.findMany({
         where: { isActive: true, ...(group === null ? {} : { depot: { dispatchGroupCode: group } }) },
         orderBy: [{ region: "asc" }, { sortOrder: "asc" }],
         select: { id: true, defaultDriverId: true },
       }),
       driverLeaveRepo.listApprovedOn(date, db),
+      // Each truck's most recent saved row before this date — a breakdown
+      // stays planned off day after day until a dispatcher plans it back on.
+      db.truckAssignment.findMany({
+        where: { date: { lt: date } },
+        orderBy: [{ date: "desc" }],
+        distinct: ["truckId"],
+        select: { truckId: true, status: true },
+      }),
     ]);
     const leaveSet = new Set(onLeave.map((l) => l.driverId));
+    const brokenDown = new Set(lastSaved.filter((s) => s.status === "OFF-BD").map((s) => s.truckId));
     return trucks.map((t) => {
+      if (brokenDown.has(t.id)) {
+        return { truck: t.id, status: "OFF-BD", driverId: null, time: "", workLocation: null, statusTime: null };
+      }
       const onLv = t.defaultDriverId != null && leaveSet.has(t.defaultDriverId);
       return {
         truck: t.id,
@@ -82,6 +98,7 @@ export const fleetBoardRepo = {
         driverId: onLv ? null : t.defaultDriverId,
         time: "",
         workLocation: null,
+        statusTime: null,
       };
     });
   },
@@ -118,7 +135,7 @@ export const fleetBoardRepo = {
   /** Apply one or more truck changes for a date (materialises first, atomically). */
   async applyChanges(
     date: Date,
-    changes: { truckId: string; status?: string; driverId?: number | null; time?: string | null }[],
+    changes: { truckId: string; status?: string; driverId?: number | null; time?: string | null; statusTime?: string | null }[],
     userId: number | null,
   ): Promise<void> {
     await retryOnUniqueClash(() =>
@@ -131,10 +148,86 @@ export const fleetBoardRepo = {
               ...(c.status !== undefined ? { status: c.status } : {}),
               ...(c.driverId !== undefined ? { driverId: c.driverId } : {}),
               ...(c.time !== undefined ? { time: c.time } : {}),
+              ...(c.statusTime !== undefined ? { statusTime: c.statusTime } : {}),
               updatedByUserId: userId,
             },
           });
         }
+      }),
+    );
+  },
+
+  /**
+   * Change a truck's status with the board rules applied, in one transaction:
+   *
+   *   - any OFF* status releases the driver (they drop to the spares rail);
+   *   - a status that isn't a timed one clears its planned time;
+   *   - OFF-BD (breakdown) also plans the truck off on every LATER saved day
+   *     — unsaved days inherit it via synthesise() until it's planned back on;
+   *   - leaving OFF-BD frees those later saved days: each gets its default
+   *     driver back when they're free that day (ON), otherwise OFF-ND.
+   */
+  async setStatus(
+    date: Date,
+    truckId: string,
+    status: string,
+    userId: number | null,
+  ): Promise<{ prior: string; clearedDriver: number | null; futureDaysPlanned: number }> {
+    return retryOnUniqueClash(() =>
+      prisma.$transaction(async (tx) => {
+        await this.ensureMaterialised(tx, date, userId);
+        const row = await tx.truckAssignment.findUnique({
+          where: { date_truckId: { date, truckId } },
+          select: { status: true, driverId: true },
+        });
+        if (!row) throw new Error("Unknown truck.");
+
+        const goingOff = statusKind(status) === "off";
+        await tx.truckAssignment.update({
+          where: { date_truckId: { date, truckId } },
+          data: {
+            status,
+            ...(goingOff ? { driverId: null } : {}),
+            ...(status in TIMED_STATUS ? {} : { statusTime: null }),
+            updatedByUserId: userId,
+          },
+        });
+
+        let futureDaysPlanned = 0;
+        if (status === "OFF-BD") {
+          // Plan the breakdown into every already-saved later day. Days that
+          // aren't saved yet inherit OFF-BD when they synthesise.
+          const hit = await tx.truckAssignment.updateMany({
+            where: { truckId, date: { gt: date } },
+            data: { status: "OFF-BD", driverId: null, statusTime: null, updatedByUserId: userId },
+          });
+          futureDaysPlanned = hit.count;
+        } else if (row.status === "OFF-BD") {
+          // Planned back on: release later saved days still marked broken.
+          const truck = await tx.truck.findUnique({ where: { id: truckId }, select: { defaultDriverId: true } });
+          const stillBroken = await tx.truckAssignment.findMany({
+            where: { truckId, date: { gt: date }, status: "OFF-BD" },
+            select: { date: true },
+            orderBy: { date: "asc" },
+          });
+          for (const day of stillBroken) {
+            let driverId: number | null = null;
+            if (truck?.defaultDriverId != null) {
+              const [takenElsewhere, onLeave] = await Promise.all([
+                tx.truckAssignment.count({ where: { date: day.date, driverId: truck.defaultDriverId } }),
+                driverLeaveRepo.listApprovedOn(day.date, tx),
+              ]);
+              const free = takenElsewhere === 0 && !onLeave.some((l) => l.driverId === truck.defaultDriverId);
+              driverId = free ? truck.defaultDriverId : null;
+            }
+            await tx.truckAssignment.update({
+              where: { date_truckId: { date: day.date, truckId } },
+              data: { status: driverId != null ? "ON" : "OFF-ND", driverId, updatedByUserId: userId },
+            });
+            futureDaysPlanned++;
+          }
+        }
+        return { prior: row.status, clearedDriver: goingOff ? row.driverId : null, futureDaysPlanned };
       }),
     );
   },

@@ -42,6 +42,8 @@ export interface TruckAssignmentVM {
   time: string | null;
   /** Plant the truck works this day (imported); null until a sheet lands. */
   workLocation: string | null;
+  /** Planned time behind a timed status (late start / early finish / service / dedag). */
+  statusTime: string | null;
 }
 
 export interface DriverLeaveVM {

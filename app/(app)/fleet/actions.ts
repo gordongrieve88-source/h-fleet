@@ -5,7 +5,7 @@ import { requireEdit, requireEditForDepot, requireUnrestrictedEdit } from "@/lib
 import { fleetBoardRepo, fleetRepo, complianceRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
 import { dateFromKey, parseYmdOrNull, fmtDate } from "@/lib/wfm/date";
-import { statusLabel } from "@/lib/wfm/fleet";
+import { statusLabel, TRUCK_STATUS } from "@/lib/wfm/fleet";
 import type { AppUser } from "@/generated/prisma/client";
 
 export type ActionResult = { ok: boolean; error?: string };
@@ -81,11 +81,50 @@ export async function moveDriver(dateKey: string, driverId: number, toTruck: str
 export async function setTruckStatus(dateKey: string, truckId: string, status: string): Promise<ActionResult> {
   const user = await requireEdit();
   if (!parseYmdOrNull(dateKey)) return badDate();
+  if (!(status.toUpperCase() in TRUCK_STATUS)) return { ok: false, error: "Unknown status." };
   try {
     await requireEditForTruck(truckId, user);
     const date = dateFromKey(dateKey);
-    await fleetBoardRepo.applyChanges(date, [{ truckId, status }], user.id);
-    await logAction(user, "fleet.status", "TruckAssignment", null, `${truckId} → ${status} (${statusLabel(status)}) on ${fmtDate(date)}`);
+    const { clearedDriver, futureDaysPlanned } = await fleetBoardRepo.setStatus(date, truckId, status, user.id);
+    const extras = [
+      clearedDriver != null ? "driver released to spares" : null,
+      futureDaysPlanned > 0
+        ? status === "OFF-BD"
+          ? `planned off ${futureDaysPlanned} saved day${futureDaysPlanned === 1 ? "" : "s"} ahead`
+          : `released ${futureDaysPlanned} saved day${futureDaysPlanned === 1 ? "" : "s"} ahead`
+        : null,
+    ].filter(Boolean);
+    await logAction(
+      user,
+      "fleet.status",
+      "TruckAssignment",
+      null,
+      `${truckId} → ${status} (${statusLabel(status)}) on ${fmtDate(date)}${extras.length ? ` — ${extras.join(", ")}` : ""}`,
+    );
+    refresh();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e).replace(/^Error:\s*/, "").slice(0, 160) };
+  }
+}
+
+/** The planned time behind a timed status (late start, early finish, service/dedag). */
+export async function setTruckStatusTime(dateKey: string, truckId: string, statusTime: string): Promise<ActionResult> {
+  const user = await requireEdit();
+  if (!parseYmdOrNull(dateKey)) return badDate();
+  const clean = statusTime.trim();
+  if (clean && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(clean)) return { ok: false, error: "Time must be HH:MM." };
+  try {
+    await requireEditForTruck(truckId, user);
+    const date = dateFromKey(dateKey);
+    await fleetBoardRepo.applyChanges(date, [{ truckId, statusTime: clean || null }], user.id);
+    await logAction(
+      user,
+      "fleet.status",
+      "TruckAssignment",
+      null,
+      clean ? `${truckId} planned time ${clean} on ${fmtDate(date)}` : `${truckId} planned time cleared on ${fmtDate(date)}`,
+    );
     refresh();
     return { ok: true };
   } catch (e) {

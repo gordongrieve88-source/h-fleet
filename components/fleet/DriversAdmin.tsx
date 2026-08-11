@@ -7,6 +7,7 @@ import {
   setDriverActive,
   loadDriverQualifications,
   setDriverCompetency,
+  setCompetencyDetail,
 } from "@/app/(app)/fleet/admin-actions";
 import { Modal, Field, useAction, input, btnPrimary, btnGhost } from "./adminUi";
 
@@ -111,6 +112,28 @@ function Qualifications({ driverId, driverName }: { driverId: number; driverName
                         >
                           {r.requiredForTruckType}
                         </span>
+                      )}
+                      {r.held && (
+                        <input
+                          type="text"
+                          defaultValue={r.reference ?? ""}
+                          placeholder="detail…"
+                          title="Optional detail — card number, certificate year, booked date"
+                          onClick={(e) => e.preventDefault()}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim();
+                            if (v !== (r.reference ?? "")) {
+                              setCompetencyDetail(driverId, r.code, v).then((res) => {
+                                if (res.ok) {
+                                  setRows((prev) => prev?.map((x) => (x.code === r.code ? { ...x, reference: v || null } : x)) ?? prev);
+                                } else {
+                                  setErr(res.error ?? "Couldn't save that.");
+                                }
+                              });
+                            }
+                          }}
+                          className="ml-auto w-24 rounded border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-600 placeholder:text-slate-300 focus:border-brand-mid focus:outline-none"
+                        />
                       )}
                     </label>
                   ) : (

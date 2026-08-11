@@ -6,11 +6,10 @@
 
 export const TRUCK_STATUS = {
   ON: { code: "ON", label: "On road", kind: "on" },
-  "ON-FTO": { code: "ON-FTO", label: "First truck out", kind: "on" },
   "ON-LS": { code: "ON-LS", label: "Late start", kind: "on" },
   "ON-EF": { code: "ON-EF", label: "Early finish", kind: "on" },
-  "ON-SER": { code: "ON-SER", label: "On — needs service", kind: "warn" },
-  "ON-DED": { code: "ON-DED", label: "On — needs dedag", kind: "warn" },
+  "ON-SER": { code: "ON-SER", label: "Service — late start / early finish", kind: "warn" },
+  "ON-DED": { code: "ON-DED", label: "Dedag — late start / early finish", kind: "warn" },
   OFF: { code: "OFF", label: "Off", kind: "off" },
   "OFF-BD": { code: "OFF-BD", label: "Breakdown", kind: "off" },
   "OFF-ND": { code: "OFF-ND", label: "Driver not in / leave", kind: "off" },
@@ -20,6 +19,18 @@ export const TRUCK_STATUS = {
 
 export type TruckStatusCode = keyof typeof TRUCK_STATUS;
 export const TRUCK_STATUS_CODES = Object.keys(TRUCK_STATUS) as TruckStatusCode[];
+
+/**
+ * Statuses that carry a planned time entered by transport: a late start's
+ * planned start, an early finish's finish, and service/dedag which can be
+ * either. The label says which the time field means.
+ */
+export const TIMED_STATUS: Record<string, string> = {
+  "ON-LS": "planned start",
+  "ON-EF": "planned finish",
+  "ON-SER": "start / finish time",
+  "ON-DED": "start / finish time",
+};
 
 export function statusKind(code: string): "on" | "warn" | "off" {
   const s = (TRUCK_STATUS as Record<string, { kind: string }>)[code.trim().toUpperCase()];

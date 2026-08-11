@@ -23,6 +23,7 @@ import { anonymiseDrivers, anonymiseRequested } from "./seed-data/anonymise";
 import { TRUCK_PROPERTIES } from "./seed-data/truck-properties";
 import { INDUCTIONS } from "./seed-data/inductions";
 import { DRIVER_PROFILE_FIELDS } from "./seed-data/driver-profile-fields";
+import { SITE_COURSES } from "./seed-data/site-courses";
 
 /**
  * The real fleet's drivers are real employees. Anywhere a stranger could reach
@@ -301,6 +302,20 @@ async function main() {
       requiredForTruckType: null,
       sortOrder: 10 + i,
     })),
+    // Site setups & courses — the region-specific slice of the onboarding
+    // checklist, so state scoping decides who sees them. NSW because this
+    // workbook is the NSW fleet's; other regions add their own in Setup.
+    ...SITE_COURSES.map((c, i) => ({
+      code: c.code,
+      name: c.label,
+      kind: "TICKBOX",
+      states: "NSW",
+      category: "Site setups & courses",
+      severity: "WARN",
+      warnDays: 0,
+      requiredForTruckType: null,
+      sortOrder: 100 + i,
+    })),
   ];
   // Earlier seeds invented placeholder credentials (agitator sign-off, mix
   // training, site A/B, dated licence/medical/induction tickets); the real
@@ -341,23 +356,29 @@ async function main() {
     if (i % 29 === 3) profileRows.push({ driverId: id, fieldCode: "TRAINER", value: "yes" });
     if (i % 31 === 9) profileRows.push({ driverId: id, fieldCode: "ASSESSOR", value: "yes" });
     profileRows.push({ driverId: id, fieldCode: "LAST_ASSESS", value: iso(addDays(today, -(30 + ((i * 41) % 400))) ) });
-    if (i % 2 === 0) profileRows.push({ driverId: id, fieldCode: "DSS3_SETUP", value: "yes" });
-    if (i % 3 !== 2) profileRows.push({ driverId: id, fieldCode: "SILICA_TAFE", value: "yes" });
-    if (i % 3 !== 2) profileRows.push({ driverId: id, fieldCode: "SPIRO_AUDIO", value: "yes" });
-    if (i % 5 < 3) profileRows.push({ driverId: id, fieldCode: "DAMSTRA_CARD", value: String(10000 + id * 3) });
   });
+  // Courses moved to state-scoped competencies (see credentialTypes above);
+  // drop their old profile fields — and answers — from databases seeded
+  // before the move.
+  await prisma.driverProfileField.deleteMany({ where: { code: { in: SITE_COURSES.map((c) => c.code) } } });
   await prisma.driverProfileValue.createMany({ data: profileRows });
 
-  // Inductions (tick boxes — no expiry). Deterministic spread so the demo
-  // shows a realistic mix: the Imagecrete pair are specialist (sparse), and
-  // each driver holds a few of the numbered site inductions.
-  const tickRows: { driverId: number; typeCode: string }[] = [];
+  // Inductions and course tick boxes (no expiry). Deterministic spread so
+  // the demo shows a realistic mix: the Imagecrete pair are specialist
+  // (sparse), each driver holds a few numbered site inductions, and the
+  // common course sign-offs (3DSS, silica, spirometry, Damstra) are wide.
+  const tickRows: { driverId: number; typeCode: string; reference?: string }[] = [];
   allDrivers.forEach(({ id }, i) => {
     if (i % 7 === 2) tickRows.push({ driverId: id, typeCode: "IC" });
     if (i % 13 === 5) tickRows.push({ driverId: id, typeCode: "IB" });
     for (let n = 1; n <= 19; n++) {
       if ((i + n * 13) % 6 === 0) tickRows.push({ driverId: id, typeCode: `INDUCTION${n}` });
     }
+    if (i % 2 === 0) tickRows.push({ driverId: id, typeCode: "DSS3_SETUP" });
+    if (i % 3 !== 2) tickRows.push({ driverId: id, typeCode: "SILICA_TAFE" });
+    if (i % 3 !== 2) tickRows.push({ driverId: id, typeCode: "SPIRO_AUDIO" });
+    if (i % 5 < 3) tickRows.push({ driverId: id, typeCode: "DAMSTRA_CARD", reference: String(10000 + id * 3) });
+    if (i % 4 === 1) tickRows.push({ driverId: id, typeCode: "M6_ONLINE_DONE" });
   });
   await prisma.driverCredential.createMany({ data: tickRows });
 
