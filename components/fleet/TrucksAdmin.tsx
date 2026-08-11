@@ -283,7 +283,7 @@ function TruckDialog({
       </div>
       <Field label="Roster group">
         <select className={input} value={rosterGroup} onChange={(e) => setRosterGroup(Number(e.target.value))}>
-          {[1, 2, 3, 4].map((g) => (
+          {[1, 2, 3].map((g) => (
             <option key={g} value={g}>
               Roster group {g}
             </option>

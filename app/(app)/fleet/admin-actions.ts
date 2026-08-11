@@ -138,7 +138,7 @@ export async function saveTruck(input: {
       block: input.block.trim(),
       type: input.type.trim() || "Agitator",
       // The fleet's norm is roster group 2 — nonsense values fall back to it.
-      rosterGroup: Number.isInteger(input.rosterGroup) && input.rosterGroup >= 1 && input.rosterGroup <= 9 ? input.rosterGroup : 2,
+      rosterGroup: Number.isInteger(input.rosterGroup) && input.rosterGroup >= 1 && input.rosterGroup <= 3 ? input.rosterGroup : 2,
       defaultDriverId: input.defaultDriverId,
     };
     await requireEditForDepot(input.depotId, user); // the depot the truck will belong to
