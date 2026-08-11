@@ -96,12 +96,24 @@ export function ftoRotate<T extends { truck: string; fto: boolean }>(rows: T[]):
  * tagged "@ plant").
  */
 export function hostBlockFor(homeBlock: string, awayPlant: string, blocks: string[]): string | null {
-  const plant = awayPlant.trim().toLowerCase();
+  const plant = awayPlant.trim();
   if (!plant) return null;
-  const candidates = blocks.filter((b) => (b.trim().split(/\s+/)[0] ?? "").toLowerCase() === plant);
+  const candidates = blocks.filter((b) => samePlantWord(b.trim().split(/\s+/)[0] ?? "", plant));
   if (candidates.length === 0) return null;
   const suffix = (b: string) => b.trim().split(/\s+/).slice(1).join(" ").toLowerCase();
   return candidates.find((b) => suffix(b) === suffix(homeBlock)) ?? candidates[0];
+}
+
+/**
+ * Same plant, allowing the sheet's clipped spellings — "preston" is
+ * Prestons, "GIRRAWEEN CONCRETE" is Girraween. Prefix match, 4+ letters so
+ * short words can't false-hit.
+ */
+function samePlantWord(a: string, b: string): boolean {
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  if (x === y) return true;
+  return x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x));
 }
 
 /**
@@ -112,7 +124,7 @@ export function hostBlockFor(homeBlock: string, awayPlant: string, blocks: strin
 export function awayPlant(workLocation: string | null | undefined, homeDepot: string): string | null {
   if (!workLocation) return null;
   const plant = workLocation.trim().split(/\s+/)[0] ?? "";
-  if (!plant || plant.toLowerCase() === (homeDepot.trim().split(/\s+/)[0] ?? "").toLowerCase()) return null;
+  if (!plant || samePlantWord(plant, homeDepot.trim().split(/\s+/)[0] ?? "")) return null;
   return plant.charAt(0).toUpperCase() + plant.slice(1).toLowerCase();
 }
 

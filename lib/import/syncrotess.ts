@@ -58,6 +58,8 @@ function nameKeys(name: string): string[] {
 
 const TRUCK_TOKEN = /^[A-Z]{2,4}\d{3,5}$/;
 const TIME_RE = /\b([01]?\d|2[0-3]):([0-5]\d)\s*(am|pm)?\b/i;
+// The sheet's shorthand: "8AM", "1pm", "midday".
+const BARE_HOUR_RE = /\b([01]?\d|2[0-3])\s*(am|pm)\b/i;
 
 function normaliseTime(h: number, m: number, ampm: string | undefined): string {
   let hour = h;
@@ -65,6 +67,30 @@ function normaliseTime(h: number, m: number, ampm: string | undefined): string {
   if (suffix === "pm" && hour < 12) hour += 12;
   if (suffix === "am" && hour === 12) hour = 0;
   return `${String(hour).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/**
+ * A start time in any of the sheet's habits: "5:30", "6.45am", "8AM",
+ * "midday". Null when the text carries no time.
+ */
+export function parseLooseTime(text: string): string | null {
+  const tm = TIME_RE.exec(text.replace(/(\d)\.(\d{2})(?!\d)/g, "$1:$2"));
+  if (tm) return normaliseTime(Number(tm[1]), Number(tm[2]), tm[3]);
+  const bare = BARE_HOUR_RE.exec(text);
+  if (bare) return normaliseTime(Number(bare[1]), 0, bare[2]);
+  if (/\b(midday|noon)\b/i.test(text)) return "12:00";
+  return null;
+}
+
+/**
+ * The sheet's other habit in the time column: "<plant> start" — the truck
+ * works out of that plant for the day. Returns the plant word, or null.
+ * "late start" / "early start" are timing notes, not plants.
+ */
+export function locationFromNote(text: string): string | null {
+  const m = /\b([A-Za-z]{3,})\s+start\b/i.exec(text);
+  if (!m) return null;
+  return /^(late|early|normal|usual|day|night|first)$/i.test(m[1]) ? null : m[1].toUpperCase();
 }
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -127,12 +153,12 @@ export function parseAllocationLines(
     if (!truckToken) continue;
     const truckId = truckSet.get(truckBase(truckToken)) ?? null;
 
-    // Time (first one on the line = start time).
-    const tm = TIME_RE.exec(line);
-    const time = tm ? normaliseTime(Number(tm[1]), Number(tm[2]), tm[3]) : null;
+    // Time (first one on the line = start time) — any of the sheet's habits.
+    const time = parseLooseTime(line);
 
-    // The Location column of the tabular roster (Time|Name|…|Parking|Location|…).
-    const location = cols.length >= 6 && cols[5] !== "" ? cols[5] : null;
+    // The Location column of the tabular roster (Time|Name|…|Parking|Location|…),
+    // or the time column's "<plant> start" habit for a truck lent out for the day.
+    const location = (cols.length >= 6 && cols[5] !== "" ? cols[5] : null) ?? locationFromNote(line);
 
     // Driver: employee number beats name; names match on normalised forms.
     let driver: ImportDriverRef | null = null;

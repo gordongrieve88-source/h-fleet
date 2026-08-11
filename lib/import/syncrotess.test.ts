@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectSheetDate, parseAllocationLines } from "./syncrotess";
+import { detectSheetDate, parseAllocationLines, parseLooseTime, locationFromNote } from "./syncrotess";
 
 const ctx = {
   truckIds: ["T1", "T2", "T3"],
@@ -61,5 +61,34 @@ describe("detectSheetDate", () => {
     expect(detectSheetDate(["run 2026-12-01 export"])).toBe("2026-12-01");
     expect(detectSheetDate(["Monday 9 August 2026"])).toBe("2026-08-09");
     expect(detectSheetDate(["no date here"])).toBeNull();
+  });
+});
+
+describe("parseLooseTime — every habit the sheet has", () => {
+  it("normalises real times", () => {
+    expect(parseLooseTime("5:30")).toBe("05:30");
+    expect(parseLooseTime("6.45am")).toBe("06:45");
+    expect(parseLooseTime("1:15 pm")).toBe("13:15");
+  });
+  it("handles bare hours and midday", () => {
+    expect(parseLooseTime("8AM")).toBe("08:00");
+    expect(parseLooseTime("1pm")).toBe("13:00");
+    expect(parseLooseTime("midday")).toBe("12:00");
+  });
+  it("null when there is no time", () => {
+    expect(parseLooseTime("RELIEF")).toBeNull();
+    expect(parseLooseTime("preston start")).toBeNull();
+  });
+});
+
+describe("locationFromNote — '<plant> start' in the time column", () => {
+  it("reads the plant", () => {
+    expect(locationFromNote("preston start")).toBe("PRESTON");
+    expect(locationFromNote("PCX2176-301 J Smith preston start")).toBe("PRESTON");
+  });
+  it("ignores timing notes", () => {
+    expect(locationFromNote("late start")).toBeNull();
+    expect(locationFromNote("early start")).toBeNull();
+    expect(locationFromNote("07:00")).toBeNull();
   });
 });

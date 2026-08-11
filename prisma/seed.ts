@@ -24,6 +24,7 @@ import { TRUCK_PROPERTIES } from "./seed-data/truck-properties";
 import { INDUCTIONS } from "./seed-data/inductions";
 import { DRIVER_PROFILE_FIELDS } from "./seed-data/driver-profile-fields";
 import { SITE_COURSES } from "./seed-data/site-courses";
+import { parseLooseTime, locationFromNote } from "../lib/import/syncrotess";
 
 /**
  * The real fleet's drivers are real employees. Anywhere a stranger could reach
@@ -458,16 +459,27 @@ async function main() {
     });
   }
 
-  // The real captured day from the workbook (02-Jun-2026), saved verbatim.
+  // The real captured day from the workbook (02-Jun-2026). The time column
+  // carries the sheet's habits — "8AM", "midday", "preston start" (works out
+  // of Prestons today), "RELIEF" — so run it through the same tolerant
+  // parsing the live import uses: real times normalise, "<plant> start"
+  // becomes the day's work location, anything else stays as a note.
   const fleetSeedDate = dateUTC(FLEET_SEED_DAY.date);
   await prisma.truckAssignment.createMany({
-    data: FLEET_SEED_DAY.assignments.map((a) => ({
-      date: fleetSeedDate,
-      truckId: a.truck,
-      status: a.status || "ON",
-      driverId: a.driverId ? (driverIdByKey[a.driverId] ?? null) : null,
-      time: a.time || null,
-    })),
+    data: FLEET_SEED_DAY.assignments.map((a) => {
+      const raw = (a.time ?? "").trim();
+      const time = raw ? parseLooseTime(raw) : null;
+      const workLocation = raw && !time ? locationFromNote(raw) : null;
+      return {
+        date: fleetSeedDate,
+        truckId: a.truck,
+        status: a.status || "ON",
+        driverId: a.driverId ? (driverIdByKey[a.driverId] ?? null) : null,
+        time,
+        workLocation,
+        note: raw && !time && !workLocation ? raw : null,
+      };
+    }),
   });
 
   // Recent history: the last ~3 weeks of non-Sunday days before today, with a
