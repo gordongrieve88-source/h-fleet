@@ -4,14 +4,14 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FleetCatalogVM, TruckAssignmentVM, DriverVM, LeaveTypeVM } from "@/lib/fleet/catalog";
-import { TRUCK_STATUS, availFor, awayPlant } from "@/lib/wfm/fleet";
+import { TRUCK_STATUS, availFor, awayPlant, ftoRotate } from "@/lib/wfm/fleet";
 import { addDaysKey, dateFromKey, isWeekendKey, mondayOf, todayKey, ymd } from "@/lib/wfm/date";
 import { Kpi } from "./Kpi";
 import { TruckRow } from "./TruckRow";
 import { DriverChip } from "./DriverChip";
 import { PickerField } from "./DatePicker";
 import { useToast } from "@/components/Toast";
-import { moveDriver, setTruckStatus, setTruckStatusTime, clearTruckDriver, resetBoardDay } from "@/app/(app)/fleet/actions";
+import { moveDriver, setTruckStatus, setTruckStatusTime, setFirstTruckOut, clearTruckDriver, resetBoardDay } from "@/app/(app)/fleet/actions";
 
 const STATUS_CODES = Object.keys(TRUCK_STATUS);
 
@@ -264,7 +264,9 @@ export function FleetBoard({
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(310px,1fr))] gap-3.5">
                   {blocks.map((block) => {
-                    const bRows = rows.filter((a) => truckBlock[a.truck] === block);
+                    // FTO order: alphanumeric, rotated so the first truck out
+                    // leads and the cycle follows on from there.
+                    const bRows = ftoRotate(rows.filter((a) => truckBlock[a.truck] === block));
                     if (bRows.length === 0) return null;
                     const ba = availFor(bRows);
                     return (
@@ -285,6 +287,7 @@ export function FleetBoard({
                               canEdit={rowEditable(a.truck)}
                               onStatus={(s) => go(() => setTruckStatus(date, a.truck, s))}
                               onStatusTime={(t) => go(() => setTruckStatusTime(date, a.truck, t))}
+                              onSetFto={() => go(() => setFirstTruckOut(date, a.truck))}
                               onClearDriver={() => go(() => clearTruckDriver(date, a.truck))}
                               dragActive={drag != null}
                               onDragStartDriver={() => a.driverId != null && setDrag(a.driverId)}

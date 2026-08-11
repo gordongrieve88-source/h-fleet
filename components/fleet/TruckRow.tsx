@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { TruckAssignmentVM, DriverVM } from "@/lib/fleet/catalog";
-import { TRUCK_STATUS, TIMED_STATUS, statusKind } from "@/lib/wfm/fleet";
+import { TRUCK_STATUS, TIMED_STATUS, statusKind, isOnRoad } from "@/lib/wfm/fleet";
 import { startVarianceMinutes } from "@/lib/wfm/analytics";
 import { DriverChip } from "./DriverChip";
 
@@ -40,6 +40,7 @@ export function TruckRow({
   canEdit,
   onStatus,
   onStatusTime,
+  onSetFto,
   onClearDriver,
   onDragStartDriver,
   onDropDriver,
@@ -61,6 +62,8 @@ export function TruckRow({
   onStatus: (s: string) => void;
   /** Save the planned time behind a timed status (late start / early finish / service / dedag). */
   onStatusTime: (t: string) => void;
+  /** Make this truck the plant's first truck out (dispatcher override). */
+  onSetFto: () => void;
   onClearDriver: () => void;
   onDragStartDriver: () => void;
   onDropDriver: () => void;
@@ -101,8 +104,12 @@ export function TruckRow({
         if ((e.target as HTMLElement).closest("select,button")) return;
         onPlace();
       }}
-      className={`grid grid-cols-[10px_60px_1fr_auto_auto] items-center gap-2 rounded-lg border px-2 py-1.5 ${
-        needsCover ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"
+      className={`group grid grid-cols-[10px_60px_1fr_auto_auto] items-center gap-2 rounded-lg border px-2 py-1.5 ${
+        needsCover
+          ? "border-amber-300 bg-amber-50"
+          : row.fto
+            ? "border-brand-mid/70 bg-brand-mid/10 shadow-[inset_2.5px_0_0_0_#00843d]"
+            : "border-slate-200 bg-white"
       } ${over ? "ring-2 ring-brand-mid" : ""} ${
         placeActive && !pickedDriver ? "cursor-pointer hover:ring-2 hover:ring-brand-mid" : ""
       }`}
@@ -112,7 +119,26 @@ export function TruckRow({
         className={`h-2.5 w-2.5 rounded-full ${DOT[kind]}`}
       />
       <span className="font-mono text-[12px] font-semibold text-slate-500">
-        {row.truck}
+        <span className={row.fto ? "text-brand-deep" : ""}>{row.truck}</span>
+        {row.fto ? (
+          <span
+            className="ml-1 rounded bg-brand-mid px-1 py-px align-middle font-sans text-[8.5px] font-bold tracking-wide text-white"
+            title="First truck out — leads the plant today; the cycle follows on from here"
+          >
+            FTO
+          </span>
+        ) : (
+          canEdit &&
+          isOnRoad(row.status) && (
+            <button
+              onClick={onSetFto}
+              className="ml-1 rounded border border-brand-mid/40 px-1 py-px align-middle font-sans text-[8.5px] font-bold tracking-wide text-brand-mid opacity-0 transition-opacity hover:bg-brand-mid hover:text-white focus:opacity-100 group-hover:opacity-100"
+              title="Make this the first truck out — overrides the cycle for today; tomorrow follows on from here"
+            >
+              →FTO
+            </button>
+          )
+        )}
         {typeTag && <span className="mt-0.5 block font-sans text-[9px] font-medium uppercase tracking-wide text-slate-400">{typeTag}</span>}
         {awayAt && (
           <span className="mt-0.5 block font-sans text-[9px] font-semibold uppercase tracking-wide text-violet-600" title={`Working at ${awayAt} today`}>

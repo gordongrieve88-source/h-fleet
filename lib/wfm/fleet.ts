@@ -47,6 +47,46 @@ export function isOnRoad(code: string): boolean {
   return code.trim().toUpperCase().startsWith("ON");
 }
 
+/** Alphanumeric fleet-code order — PCC2044 before PCC2088 before PLC2603. */
+export function truckOrder(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+/**
+ * First-truck-out cycling: the fleet runs a first-in-first-out cyclical
+ * roster per plant — if 1111 leads today, 2222 leads tomorrow. Given the
+ * block's trucks in alphanumeric order, the previous FTO and how many days
+ * have passed, pick today's FTO: advance one position per day, then walk
+ * forward to the first truck that's actually on road (a broken-down or
+ * parked truck misses its turn). Null when nothing is on road.
+ */
+export function nextFto(
+  sortedTrucks: string[],
+  prevFto: string | null,
+  daysSince: number,
+  isOn: (truck: string) => boolean,
+): string | null {
+  const n = sortedTrucks.length;
+  if (n === 0) return null;
+  const prevIdx = prevFto ? sortedTrucks.findIndex((t) => truckOrder(t, prevFto) === 0) : -1;
+  const start = prevIdx === -1 ? 0 : (prevIdx + Math.max(1, daysSince)) % n;
+  for (let k = 0; k < n; k++) {
+    const cand = sortedTrucks[(start + k) % n];
+    if (isOn(cand)) return cand;
+  }
+  return null;
+}
+
+/**
+ * A block's board rows in FTO order: alphanumeric, rotated so the first
+ * truck out leads and the sequence follows on from there.
+ */
+export function ftoRotate<T extends { truck: string; fto: boolean }>(rows: T[]): T[] {
+  const sorted = [...rows].sort((a, b) => truckOrder(a.truck, b.truck));
+  const i = sorted.findIndex((r) => r.fto);
+  return i > 0 ? [...sorted.slice(i), ...sorted.slice(0, i)] : sorted;
+}
+
 /**
  * "Working away" label: the imported work location vs the truck's home
  * depot, compared on their first words ("CAMELLIA CONCRETE" vs "Camellia").

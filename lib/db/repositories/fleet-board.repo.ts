@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "../client";
 import { driverLeaveRepo } from "./driver-leave.repo";
-import { statusKind, TIMED_STATUS } from "@/lib/wfm/fleet";
+import { statusKind, isOnRoad, nextFto, truckOrder, TIMED_STATUS } from "@/lib/wfm/fleet";
 
 export interface FleetBoardRow {
   truck: string;
@@ -12,6 +12,8 @@ export interface FleetBoardRow {
   workLocation: string | null;
   /** Planned time behind a timed status (late start / early finish / service / dedag). */
   statusTime: string | null;
+  /** First truck out of its plant this day — the board rotates the block to start here. */
+  fto: boolean;
 }
 
 /** What a driver move actually did — feeds the audit line. */
@@ -53,7 +55,7 @@ export const fleetBoardRepo = {
   async getBoard(date: Date, group: string | null = null): Promise<FleetBoardRow[]> {
     const saved = await prisma.truckAssignment.findMany({
       where: { date, ...(group === null ? {} : { truck: { depot: { dispatchGroupCode: group } } }) },
-      select: { truckId: true, status: true, driverId: true, time: true, workLocation: true, statusTime: true },
+      select: { truckId: true, status: true, driverId: true, time: true, workLocation: true, statusTime: true, fto: true },
     });
     if (saved.length > 0) {
       return saved.map((a) => ({
@@ -63,17 +65,18 @@ export const fleetBoardRepo = {
         time: a.time,
         workLocation: a.workLocation,
         statusTime: a.statusTime,
+        fto: a.fto,
       }));
     }
     return this.synthesise(date, prisma, group);
   },
 
   async synthesise(date: Date, db: Db = prisma, group: string | null = null): Promise<FleetBoardRow[]> {
-    const [trucks, onLeave, lastSaved] = await Promise.all([
+    const [trucks, onLeave, lastSaved, lastFto] = await Promise.all([
       db.truck.findMany({
         where: { isActive: true, ...(group === null ? {} : { depot: { dispatchGroupCode: group } }) },
         orderBy: [{ region: "asc" }, { sortOrder: "asc" }],
-        select: { id: true, defaultDriverId: true },
+        select: { id: true, defaultDriverId: true, block: true },
       }),
       driverLeaveRepo.listApprovedOn(date, db),
       // Each truck's most recent saved row before this date — a breakdown
@@ -84,12 +87,20 @@ export const fleetBoardRepo = {
         distinct: ["truckId"],
         select: { truckId: true, status: true },
       }),
+      // Each truck's most recent day as first-truck-out — the anchor the
+      // cyclical roster advances from.
+      db.truckAssignment.findMany({
+        where: { fto: true, date: { lt: date } },
+        orderBy: [{ date: "desc" }],
+        distinct: ["truckId"],
+        select: { truckId: true, date: true },
+      }),
     ]);
     const leaveSet = new Set(onLeave.map((l) => l.driverId));
     const brokenDown = new Set(lastSaved.filter((s) => s.status === "OFF-BD").map((s) => s.truckId));
-    return trucks.map((t) => {
+    const rows = trucks.map((t) => {
       if (brokenDown.has(t.id)) {
-        return { truck: t.id, status: "OFF-BD", driverId: null, time: "", workLocation: null, statusTime: null };
+        return { truck: t.id, status: "OFF-BD", driverId: null, time: "", workLocation: null, statusTime: null, fto: false };
       }
       const onLv = t.defaultDriverId != null && leaveSet.has(t.defaultDriverId);
       return {
@@ -99,8 +110,34 @@ export const fleetBoardRepo = {
         time: "",
         workLocation: null,
         statusTime: null,
+        fto: false,
       };
     });
+
+    // First truck out, per plant: advance the cycle one position per day
+    // from the block's last saved FTO, skipping trucks that are off today.
+    const rowByTruck = new Map(rows.map((r) => [r.truck, r]));
+    const ftoDateByTruck = new Map(lastFto.map((f) => [f.truckId, f.date]));
+    const byBlock = new Map<string, string[]>();
+    for (const t of trucks) {
+      byBlock.set(t.block, [...(byBlock.get(t.block) ?? []), t.id]);
+    }
+    for (const members of byBlock.values()) {
+      const sorted = [...members].sort(truckOrder);
+      let prevTruck: string | null = null;
+      let prevDate: Date | null = null;
+      for (const id of sorted) {
+        const d = ftoDateByTruck.get(id);
+        if (d && (prevDate === null || d > prevDate)) {
+          prevDate = d;
+          prevTruck = id;
+        }
+      }
+      const daysSince = prevDate ? Math.round((date.getTime() - prevDate.getTime()) / 86_400_000) : 1;
+      const fto = nextFto(sorted, prevTruck, daysSince, (id) => isOnRoad(rowByTruck.get(id)?.status ?? "OFF"));
+      if (fto) rowByTruck.get(fto)!.fto = true;
+    }
+    return rows;
   },
 
   /** True once a date has saved rows. */
@@ -120,9 +157,35 @@ export const fleetBoardRepo = {
         status: r.status,
         driverId: r.driverId,
         time: r.time,
+        fto: r.fto,
         createdByUserId: userId,
       })),
     });
+  },
+
+  /**
+   * Re-seat a block's first-truck-out marker for one saved day: if the
+   * marked truck is off (or nothing is marked), the next on-road truck in
+   * the alphanumeric cycle steps up. No-op while the marker is on road.
+   */
+  async recomputeFto(tx: Db, date: Date, block: string): Promise<void> {
+    const members = await tx.truck.findMany({ where: { block, isActive: true }, select: { id: true } });
+    const ids = members.map((m) => m.id).sort(truckOrder);
+    if (ids.length === 0) return;
+    const rows = await tx.truckAssignment.findMany({
+      where: { date, truckId: { in: ids } },
+      select: { truckId: true, status: true, fto: true },
+    });
+    const byId = new Map(rows.map((r) => [r.truckId, r]));
+    const current = rows.find((r) => r.fto) ?? null;
+    if (current && isOnRoad(current.status)) return;
+    const fto = nextFto(ids, current?.truckId ?? null, 1, (id) => isOnRoad(byId.get(id)?.status ?? "OFF"));
+    if (current && current.truckId !== fto) {
+      await tx.truckAssignment.update({ where: { date_truckId: { date, truckId: current.truckId } }, data: { fto: false } });
+    }
+    if (fto && fto !== current?.truckId) {
+      await tx.truckAssignment.update({ where: { date_truckId: { date, truckId: fto } }, data: { fto: true } });
+    }
   },
 
   /** Write the full synthesised day if it isn't saved yet (idempotent). */
@@ -153,6 +216,37 @@ export const fleetBoardRepo = {
             },
           });
         }
+      }),
+    );
+  },
+
+  /**
+   * Hand first-truck-out to a specific truck for one day (dispatcher's
+   * override of the cycle). The truck must be on road; the block's previous
+   * marker is cleared. Tomorrow's cycle advances from here — the override
+   * becomes the new anchor.
+   */
+  async setFto(date: Date, truckId: string, userId: number | null): Promise<void> {
+    await retryOnUniqueClash(() =>
+      prisma.$transaction(async (tx) => {
+        await this.ensureMaterialised(tx, date, userId);
+        const row = await tx.truckAssignment.findUnique({
+          where: { date_truckId: { date, truckId } },
+          select: { status: true, fto: true },
+        });
+        if (!row) throw new Error("Unknown truck.");
+        if (!isOnRoad(row.status)) throw new Error(`${truckId} is ${row.status} — first truck out must be on road.`);
+        if (row.fto) return;
+        const truck = await tx.truck.findUnique({ where: { id: truckId }, select: { block: true } });
+        const members = await tx.truck.findMany({ where: { block: truck?.block ?? "" }, select: { id: true } });
+        await tx.truckAssignment.updateMany({
+          where: { date, truckId: { in: members.map((m) => m.id) }, fto: true },
+          data: { fto: false, updatedByUserId: userId },
+        });
+        await tx.truckAssignment.update({
+          where: { date_truckId: { date, truckId } },
+          data: { fto: true, updatedByUserId: userId },
+        });
       }),
     );
   },
@@ -193,18 +287,27 @@ export const fleetBoardRepo = {
           },
         });
 
+        const truck = await tx.truck.findUnique({ where: { id: truckId }, select: { defaultDriverId: true, block: true } });
+
         let futureDaysPlanned = 0;
         if (status === "OFF-BD") {
           // Plan the breakdown into every already-saved later day. Days that
           // aren't saved yet inherit OFF-BD when they synthesise.
+          const futureDays = await tx.truckAssignment.findMany({
+            where: { truckId, date: { gt: date } },
+            select: { date: true },
+          });
           const hit = await tx.truckAssignment.updateMany({
             where: { truckId, date: { gt: date } },
-            data: { status: "OFF-BD", driverId: null, statusTime: null, updatedByUserId: userId },
+            data: { status: "OFF-BD", driverId: null, statusTime: null, fto: false, updatedByUserId: userId },
           });
           futureDaysPlanned = hit.count;
+          // The broken truck can't lead any of those days — re-seat markers.
+          if (truck) {
+            for (const day of futureDays) await this.recomputeFto(tx, day.date, truck.block);
+          }
         } else if (row.status === "OFF-BD") {
           // Planned back on: release later saved days still marked broken.
-          const truck = await tx.truck.findUnique({ where: { id: truckId }, select: { defaultDriverId: true } });
           const stillBroken = await tx.truckAssignment.findMany({
             where: { truckId, date: { gt: date }, status: "OFF-BD" },
             select: { date: true },
@@ -227,6 +330,11 @@ export const fleetBoardRepo = {
             futureDaysPlanned++;
           }
         }
+
+        // Whatever changed, this day's first-truck-out must sit on a truck
+        // that's actually on road — an off FTO hands its turn to the next.
+        if (truck) await this.recomputeFto(tx, date, truck.block);
+
         return { prior: row.status, clearedDriver: goingOff ? row.driverId : null, futureDaysPlanned };
       }),
     );

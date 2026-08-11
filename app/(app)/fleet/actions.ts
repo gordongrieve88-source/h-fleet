@@ -108,6 +108,22 @@ export async function setTruckStatus(dateKey: string, truckId: string, status: s
   }
 }
 
+/** Hand first-truck-out to a specific truck — the dispatcher's override of the cycle. */
+export async function setFirstTruckOut(dateKey: string, truckId: string): Promise<ActionResult> {
+  const user = await requireEdit();
+  if (!parseYmdOrNull(dateKey)) return badDate();
+  try {
+    await requireEditForTruck(truckId, user);
+    const date = dateFromKey(dateKey);
+    await fleetBoardRepo.setFto(date, truckId, user.id);
+    await logAction(user, "fleet.fto", "TruckAssignment", null, `${truckId} set as first truck out on ${fmtDate(date)}`);
+    refresh();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e).replace(/^Error:\s*/, "").slice(0, 160) };
+  }
+}
+
 /** The planned time behind a timed status (late start, early finish, service/dedag). */
 export async function setTruckStatusTime(dateKey: string, truckId: string, statusTime: string): Promise<ActionResult> {
   const user = await requireEdit();

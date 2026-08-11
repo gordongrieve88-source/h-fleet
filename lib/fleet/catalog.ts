@@ -44,6 +44,8 @@ export interface TruckAssignmentVM {
   workLocation: string | null;
   /** Planned time behind a timed status (late start / early finish / service / dedag). */
   statusTime: string | null;
+  /** First truck out of its plant this day — the board rotates the block to start here. */
+  fto: boolean;
 }
 
 export interface DriverLeaveVM {

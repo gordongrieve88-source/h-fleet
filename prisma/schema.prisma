@@ -368,6 +368,10 @@ model TruckAssignment {
   /// finish's finish, service/dedag either way ("HH:MM"). Cleared when the
   /// status stops being a timed one.
   statusTime String?
+  /// First truck out — the truck whose turn it is to leave the plant first.
+  /// One per block per day, advanced cyclically (alphanumeric order) from the
+  /// previous day; the board shows the block's list rotated to start here.
+  fto Boolean @default(false)
   /// Where the truck works THIS day (from the Syncrotess Location column) —
   /// often its home plant, but trucks get lent across plants day by day.
   workLocation String?

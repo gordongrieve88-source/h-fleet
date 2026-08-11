@@ -22,9 +22,9 @@ describe("roll-forward synthesis", () => {
   it("an unsaved day is synthesised from default drivers, nothing is written", async () => {
     const board = await fleetBoardRepo.getBoard(DAY);
     expect(board).toEqual([
-      { truck: "T1", status: "ON", driverId: fx.driver1, time: "", workLocation: null, statusTime: null },
-      { truck: "T2", status: "ON", driverId: fx.driver2, time: "", workLocation: null, statusTime: null },
-      { truck: "T3", status: "ON", driverId: null, time: "", workLocation: null, statusTime: null },
+      { truck: "T1", status: "ON", driverId: fx.driver1, time: "", workLocation: null, statusTime: null, fto: true },
+      { truck: "T2", status: "ON", driverId: fx.driver2, time: "", workLocation: null, statusTime: null, fto: false },
+      { truck: "T3", status: "ON", driverId: null, time: "", workLocation: null, statusTime: null, fto: false },
     ]);
     expect(await fleetBoardRepo.isMaterialised(DAY)).toBe(false);
   });
@@ -38,7 +38,7 @@ describe("roll-forward synthesis", () => {
       createdByUserId: null,
     });
     const board = await fleetBoardRepo.getBoard(DAY);
-    expect(board.find((r) => r.truck === "T2")).toEqual({ truck: "T2", status: "OFF-ND", driverId: null, time: "", workLocation: null, statusTime: null });
+    expect(board.find((r) => r.truck === "T2")).toEqual({ truck: "T2", status: "OFF-ND", driverId: null, time: "", workLocation: null, statusTime: null, fto: false });
   });
 });
 
