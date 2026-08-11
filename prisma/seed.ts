@@ -265,6 +265,31 @@ async function main() {
     await prisma.truckOnProperty.createMany({ data: ticked.map((code) => ({ truckId: t.id, propertyCode: code })) });
   }
 
+  // Every truck gets a default driver — the extract leaves some blank, which
+  // muddies the board with permanent needs-cover rows. Fill from drivers who
+  // aren't anyone's default yet, same depot first, deterministically.
+  const takenDrivers = new Set(
+    (await prisma.truck.findMany({ where: { defaultDriverId: { not: null } }, select: { defaultDriverId: true } })).map(
+      (t) => t.defaultDriverId,
+    ),
+  );
+  const freePool = await prisma.driver.findMany({
+    where: { id: { notIn: [...takenDrivers].filter((x): x is number => x != null) } },
+    orderBy: { id: "asc" },
+    select: { id: true, depotId: true },
+  });
+  const bareTrucks = await prisma.truck.findMany({
+    where: { defaultDriverId: null },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true, depotId: true },
+  });
+  for (const t of bareTrucks) {
+    const i = freePool.findIndex((d) => d.depotId === t.depotId);
+    const pick = i >= 0 ? freePool.splice(i, 1)[0] : freePool.shift();
+    if (!pick) break;
+    await prisma.truck.update({ where: { id: t.id }, data: { defaultDriverId: pick.id } });
+  }
+
   // Link the demo self-service account to a driver who actually drives a
   // truck, so /me has a roster to show.
   const demoDriverUser = await prisma.appUser.findUnique({ where: { email: "driver@h-fleet.demo" } });

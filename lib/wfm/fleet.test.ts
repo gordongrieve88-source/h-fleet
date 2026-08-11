@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { availFor, awayPlant, isOnRoad, statusKind, statusLabel, TRUCK_STATUS_CODES } from "./fleet";
+import { availFor, awayPlant, hostBlockFor, isOnRoad, statusKind, statusLabel, TRUCK_STATUS_CODES } from "./fleet";
 
 describe("statusKind", () => {
   it("classifies the spreadsheet codes", () => {
@@ -83,5 +83,27 @@ describe("availFor", () => {
       { status: "ON", driverId: 9 }, // crewed -> fine
     ];
     expect(availFor(rows).needsCover).toBe(2);
+  });
+});
+
+describe("hostBlockFor — which block hosts a lent-out truck", () => {
+  const BLOCKS = ["Greenacre Metro", "Greenacre Project", "Camellia Metro", "Camellia Project", "Pyrmont Project"];
+
+  it("prefers the host block with the same suffix as home", () => {
+    expect(hostBlockFor("Greenacre Metro", "Camellia", BLOCKS)).toBe("Camellia Metro");
+    expect(hostBlockFor("Greenacre Project", "Camellia", BLOCKS)).toBe("Camellia Project");
+  });
+
+  it("falls back to the plant's first block when the suffix has no match", () => {
+    expect(hostBlockFor("Greenacre Metro", "Pyrmont", BLOCKS)).toBe("Pyrmont Project");
+  });
+
+  it("null for a plant with no blocks — the truck stays listed at home", () => {
+    expect(hostBlockFor("Greenacre Metro", "Bathurst", BLOCKS)).toBeNull();
+    expect(hostBlockFor("Greenacre Metro", "", BLOCKS)).toBeNull();
+  });
+
+  it("matches the plant case-insensitively", () => {
+    expect(hostBlockFor("Greenacre Metro", "camellia", BLOCKS)).toBe("Camellia Metro");
   });
 });

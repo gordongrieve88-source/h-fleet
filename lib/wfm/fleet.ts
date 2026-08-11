@@ -88,6 +88,23 @@ export function ftoRotate<T extends { truck: string; fto: boolean }>(rows: T[]):
 }
 
 /**
+ * Which block hosts a truck lent to another plant for the day. The imported
+ * location gives the plant ("Camellia"); a plant can run several blocks
+ * ("Camellia Metro", "Camellia Project"), so prefer the one whose suffix
+ * matches the truck's home block — a Metro truck visits the Metro block.
+ * Null when no block of that plant exists (the truck stays listed at home,
+ * tagged "@ plant").
+ */
+export function hostBlockFor(homeBlock: string, awayPlant: string, blocks: string[]): string | null {
+  const plant = awayPlant.trim().toLowerCase();
+  if (!plant) return null;
+  const candidates = blocks.filter((b) => (b.trim().split(/\s+/)[0] ?? "").toLowerCase() === plant);
+  if (candidates.length === 0) return null;
+  const suffix = (b: string) => b.trim().split(/\s+/).slice(1).join(" ").toLowerCase();
+  return candidates.find((b) => suffix(b) === suffix(homeBlock)) ?? candidates[0];
+}
+
+/**
  * "Working away" label: the imported work location vs the truck's home
  * depot, compared on their first words ("CAMELLIA CONCRETE" vs "Camellia").
  * Returns the tidied plant name when the truck is lent out, null when home.

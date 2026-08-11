@@ -33,7 +33,7 @@ const SELECT_TEXT = { on: "text-brand-mid", warn: "text-amber-600", off: "text-r
  *  a tap target for tap-to-place moves. */
 export function TruckRow({
   row,
-  awayAt,
+  awayTag,
   typeTag,
   driver,
   statusCodes,
@@ -54,8 +54,8 @@ export function TruckRow({
   onToggleSelect,
 }: {
   row: TruckAssignmentVM;
-  /** Plant the truck is lent to today (from the allocation import), or null at home. */
-  awayAt: string | null;
+  /** Lent-out marker: "@ Camellia" at home, "from Greenacre" in the host card. */
+  awayTag: { label: string; title: string } | null;
   /** Vehicle type shown as a small tag — null hides it (single-type fleets). */
   typeTag: string | null;
   driver: DriverVM | null;
@@ -148,7 +148,9 @@ export function TruckRow({
           </span>
         ) : (
           canEdit &&
-          isOnRoad(row.status) && (
+          isOnRoad(row.status) &&
+          // Not while visiting another plant — FTO turns belong at home.
+          !awayTag?.label.startsWith("from ") && (
             <button
               onClick={onSetFto}
               className="mt-0.5 block w-fit rounded border border-brand-mid/40 px-1 py-px font-sans text-[8.5px] font-bold tracking-wide text-brand-mid opacity-0 transition-opacity hover:bg-brand-mid hover:text-white focus:opacity-100 group-hover:opacity-100"
@@ -159,9 +161,9 @@ export function TruckRow({
           )
         )}
         {typeTag && <span className="mt-0.5 block font-sans text-[9px] font-medium uppercase tracking-wide text-slate-400">{typeTag}</span>}
-        {awayAt && (
-          <span className="mt-0.5 block font-sans text-[9px] font-semibold uppercase tracking-wide text-violet-600" title={`Working at ${awayAt} today`}>
-            @ {awayAt}
+        {awayTag && (
+          <span className="mt-0.5 block font-sans text-[9px] font-semibold uppercase tracking-wide text-violet-600" title={awayTag.title}>
+            {awayTag.label}
           </span>
         )}
       </span>

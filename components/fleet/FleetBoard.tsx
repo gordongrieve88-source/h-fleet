@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FleetCatalogVM, TruckAssignmentVM, DriverVM, LeaveTypeVM } from "@/lib/fleet/catalog";
-import { TRUCK_STATUS, availFor, awayPlant, ftoRotate } from "@/lib/wfm/fleet";
+import { TRUCK_STATUS, availFor, awayPlant, ftoRotate, hostBlockFor, truckOrder } from "@/lib/wfm/fleet";
 import { addDaysKey, dateFromKey, isWeekendKey, mondayOf, todayKey, ymd } from "@/lib/wfm/date";
 import { Kpi } from "./Kpi";
 import { TruckRow } from "./TruckRow";
@@ -121,6 +121,26 @@ export function FleetBoard({
     }
     return m;
   }, [catalog.trucks]);
+
+  // A truck lent to another plant (imported work location) sits in the HOST
+  // plant's card for the day — badged "from <home>" — and snaps home the next
+  // day, because the location is per-day data. No block of that plant known →
+  // it stays at home tagged "@ plant".
+  const visiting = useMemo(() => {
+    const allBlocks = [...new Set(catalog.trucks.map((t) => t.block))];
+    const out: Record<string, { block: string; homePlant: string } | undefined> = {};
+    for (const r of rows) {
+      const home = truckBlock[r.truck];
+      const away = awayPlant(r.workLocation, truckHome[r.truck] ?? "");
+      if (!home || !away) continue;
+      const host = hostBlockFor(home, away, allBlocks);
+      if (host && host !== home) out[r.truck] = { block: host, homePlant: home.split(/\s+/)[0] ?? home };
+    }
+    return out;
+  }, [rows, catalog.trucks, truckBlock, truckHome]);
+  const effectiveBlock = (truckId: string) => visiting[truckId]?.block ?? truckBlock[truckId];
+  // Region cards follow the day's working plant too.
+  const blockRegion = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.block, t.region])), [catalog.trucks]);
 
   const fleet = useMemo(() => availFor(rows), [rows]);
   const onLeaveIds = useMemo(() => new Set(onLeave.map((l) => l.driverId)), [onLeave]);
@@ -280,7 +300,7 @@ export function FleetBoard({
         <div className="min-w-0 flex-1">
           {regions.map((region) => {
             const blocks = blocksByRegion[region] ?? [];
-            const regionRows = rows.filter((a) => truckRegion[a.truck] === region);
+            const regionRows = rows.filter((a) => (blockRegion[effectiveBlock(a.truck) ?? ""] ?? truckRegion[a.truck]) === region);
             if (regionRows.length === 0) return null;
             const ra = availFor(regionRows);
             return (
@@ -293,9 +313,16 @@ export function FleetBoard({
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(310px,1fr))] gap-3.5">
                   {blocks.map((block) => {
-                    // FTO order: alphanumeric, rotated so the first truck out
-                    // leads and the cycle follows on from there.
-                    const bRows = ftoRotate(rows.filter((a) => truckBlock[a.truck] === block));
+                    // FTO order for the plant's own trucks — alphanumeric,
+                    // rotated so the first truck out leads — with the day's
+                    // visitors appended after the cycle (they don't take a
+                    // turn in the host plant's rotation).
+                    const members = ftoRotate(rows.filter((a) => effectiveBlock(a.truck) === block && truckBlock[a.truck] === block));
+                    const guests = rows
+                      .filter((a) => effectiveBlock(a.truck) === block && truckBlock[a.truck] !== block)
+                      .sort((a, b) => truckOrder(a.truck, b.truck))
+                      .map((a) => ({ ...a, fto: false })); // home FTO flag means nothing here
+                    const bRows = [...members, ...guests];
                     if (bRows.length === 0) return null;
                     const ba = availFor(bRows);
                     return (
@@ -329,7 +356,13 @@ export function FleetBoard({
                             <TruckRow
                               key={a.truck}
                               row={a}
-                              awayAt={awayPlant(a.workLocation, truckHome[a.truck] ?? "")}
+                              awayTag={(() => {
+                                const v = visiting[a.truck];
+                                if (v && v.block === block)
+                                  return { label: `from ${v.homePlant}`, title: `Home plant ${v.homePlant} — working here today (imported allocation)` };
+                                const away = awayPlant(a.workLocation, truckHome[a.truck] ?? "");
+                                return away ? { label: `@ ${away}`, title: `Working at ${away} today` } : null;
+                              })()}
                               typeTag={mixedTypes ? (truckType[a.truck] ?? null) : null}
                               driver={a.driverId != null ? (driverById.get(a.driverId) ?? null) : null}
                               statusCodes={STATUS_CODES}
