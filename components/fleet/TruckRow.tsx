@@ -41,6 +41,10 @@ export function TruckRow({
   onStatus,
   onStatusTime,
   onSetFto,
+  homeBlock,
+  depotBlocks,
+  workBlock,
+  onWorkDepot,
   onClearDriver,
   onDragStartDriver,
   onDropDriver,
@@ -67,6 +71,14 @@ export function TruckRow({
   onStatusTime: (t: string) => void;
   /** Make this truck the plant's first truck out (dispatcher override). */
   onSetFto: () => void;
+  /** The truck's home plant (block) — the depot picker's "home" option. */
+  homeBlock: string;
+  /** Other plants transport can send this truck to for the day. */
+  depotBlocks: string[];
+  /** Today's working plant when lent out — "" means home. */
+  workBlock: string;
+  /** Send the truck to work at another depot's plant for the day. */
+  onWorkDepot: (block: string) => void;
   onClearDriver: () => void;
   onDragStartDriver: () => void;
   onDropDriver: () => void;
@@ -253,6 +265,27 @@ export function TruckRow({
               }}
               className="w-[92px] rounded-md border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10.5px] font-semibold tabular-nums text-amber-800 focus:border-brand-mid focus:outline-none"
             />
+          )}
+          {/* Depot for the day — hidden until hover while at home, loud
+              violet (matching the "from …" tag) while lent out. */}
+          {depotBlocks.length > 0 && (
+            <select
+              value={workBlock}
+              onChange={(e) => onWorkDepot(e.target.value)}
+              title="Working from — send this truck to another depot's plant for the day; it snaps home tomorrow"
+              className={`max-w-[92px] rounded-md border px-1 py-0.5 text-[10px] font-semibold ${
+                workBlock
+                  ? "border-violet-300 bg-violet-50 text-violet-700"
+                  : "border-slate-200 bg-white text-slate-400 opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
+              }`}
+            >
+              <option value="">⌂ {homeBlock}</option>
+              {depotBlocks.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
           )}
         </span>
       ) : (

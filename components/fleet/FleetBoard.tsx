@@ -16,6 +16,7 @@ import {
   setTruckStatus,
   setTruckStatusTime,
   setTruckStatusBulk,
+  setTruckWorkDepot,
   setFirstTruckOut,
   clearTruckDriver,
   resetBoardDay,
@@ -395,6 +396,17 @@ export function FleetBoard({
                               onStatus={(s) => go(() => setTruckStatus(date, a.truck, s))}
                               onStatusTime={(t) => go(() => setTruckStatusTime(date, a.truck, t))}
                               onSetFto={() => go(() => setFirstTruckOut(date, a.truck))}
+                              homeBlock={truckBlock[a.truck] ?? ""}
+                              depotBlocks={(() => {
+                                // Same dispatch group (region) as the truck's home,
+                                // plus wherever it's already visiting today.
+                                const opts = (blocksByRegion[truckRegion[a.truck]] ?? []).filter((b) => b !== truckBlock[a.truck]);
+                                const wb = visiting[a.truck]?.block;
+                                if (wb && !opts.includes(wb)) opts.push(wb);
+                                return opts.sort((x, y) => x.localeCompare(y));
+                              })()}
+                              workBlock={visiting[a.truck]?.block ?? ""}
+                              onWorkDepot={(b) => go(() => setTruckWorkDepot(date, a.truck, b))}
                               onClearDriver={() => go(() => clearTruckDriver(date, a.truck))}
                               dragActive={drag != null}
                               onDragStartDriver={() => a.driverId != null && setDrag(a.driverId)}

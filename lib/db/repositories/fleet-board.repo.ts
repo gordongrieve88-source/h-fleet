@@ -257,6 +257,28 @@ export const fleetBoardRepo = {
   },
 
   /**
+   * Where the truck works for the day — transport lending it to another
+   * depot's plant without moving it. Stored on the day's row exactly like an
+   * imported allocation, so the truck sits in the host plant's card today
+   * and snaps home tomorrow. Null brings it home.
+   */
+  async setWorkLocation(date: Date, truckId: string, block: string | null, userId: number | null): Promise<void> {
+    await retryOnUniqueClash(() =>
+      prisma.$transaction(async (tx) => {
+        await this.ensureMaterialised(tx, date, userId);
+        if (block != null) {
+          const exists = await tx.truck.findFirst({ where: { block }, select: { id: true } });
+          if (!exists) throw new Error(`No plant called ${block}.`);
+        }
+        await tx.truckAssignment.update({
+          where: { date_truckId: { date, truckId } },
+          data: { workLocation: block, updatedByUserId: userId },
+        });
+      }),
+    );
+  },
+
+  /**
    * Change a truck's status with the board rules applied, in one transaction:
    *
    *   - any OFF* status releases the driver (they drop to the spares rail);

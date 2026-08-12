@@ -183,6 +183,43 @@ export async function setFirstTruckOut(dateKey: string, truckId: string): Promis
   }
 }
 
+/** Send a truck to work at another depot's plant for the day — or bring it home.
+ *  Day-scoped like an imported allocation: it snaps home tomorrow. */
+export async function setTruckWorkDepot(dateKey: string, truckId: string, block: string): Promise<ActionResult> {
+  const user = await requireEdit();
+  if (!parseYmdOrNull(dateKey)) return badDate();
+  const clean = block.trim().slice(0, 60);
+  try {
+    const truck = await requireEditForTruck(truckId, user);
+    const date = dateFromKey(dateKey);
+    const target = clean && clean !== truck.block ? clean : null; // picking home = clearing
+    await fleetBoardRepo.setWorkLocation(date, truckId, target, user.id);
+    await logAction(
+      user,
+      "fleet.depot",
+      "TruckAssignment",
+      null,
+      target
+        ? `${truckId} working from ${target} on ${fmtDate(date)}`
+        : `${truckId} back at ${truck.block} (home) on ${fmtDate(date)}`,
+    );
+    // The allocators need to re-plan a truck that dispatches elsewhere — so
+    // this lands in their inbox like any other board change.
+    const row = await fleetBoardRepo.getAssignment(date, truckId);
+    await pushRosterChanges(dateKey, [
+      {
+        truck: truckId,
+        summary: target ? `Working from ${target} today (home ${truck.block})` : `Back at ${truck.block} — cross-depot day cancelled`,
+        status: row?.status?.toUpperCase() || undefined,
+      },
+    ]);
+    refresh();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e).replace(/^Error:\s*/, "").slice(0, 160) };
+  }
+}
+
 /** The planned time behind a timed status (late start, early finish, service/dedag). */
 export async function setTruckStatusTime(dateKey: string, truckId: string, statusTime: string): Promise<ActionResult> {
   const user = await requireEdit();
