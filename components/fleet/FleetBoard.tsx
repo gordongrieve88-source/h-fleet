@@ -200,12 +200,31 @@ export function FleetBoard({
 
   const regions = regionFilter === "All" ? catalog.regions : [regionFilter];
   const weekend = isWeekendKey(date);
+  // Which day am I actually editing? The one mistake this board invites is
+  // planning tomorrow's day on today's date — so today and every other day
+  // must be impossible to confuse at a glance.
+  const dayOffset = Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${todayKey()}T00:00:00Z`)) / 86_400_000);
+  const dayBadge =
+    dayOffset === 0
+      ? { text: "TODAY", cls: "bg-brand-mid text-white" }
+      : dayOffset === 1
+        ? { text: "PLANNING — TOMORROW", cls: "bg-violet-600 text-white" }
+        : dayOffset > 1
+          ? { text: `PLANNING — IN ${dayOffset} DAYS`, cls: "bg-violet-600 text-white" }
+          : dayOffset === -1
+            ? { text: "PAST DAY — YESTERDAY", cls: "bg-slate-600 text-white" }
+            : { text: `PAST DAY — ${-dayOffset} DAYS AGO`, cls: "bg-slate-600 text-white" };
   const doctorCount = doctor.reduce((a, g) => a + g.items.length, 0);
 
   return (
     <div className={pending ? "opacity-70 transition-opacity" : ""}>
-      {/* Controls — sticks just below the app topbar. */}
-      <div className="print-hide sticky top-14 z-30 -mx-5 mb-4 border-b border-slate-200 bg-brand-sand/70 px-5 py-3 backdrop-blur">
+      {/* Controls — sticks just below the app topbar. The bar itself changes
+          colour away from today, so the whole context reads differently. */}
+      <div
+        className={`print-hide sticky top-14 z-30 -mx-5 mb-4 border-b px-5 py-3 backdrop-blur ${
+          dayOffset === 0 ? "border-slate-200 bg-brand-sand/70" : dayOffset > 0 ? "border-violet-200 bg-violet-100/80" : "border-slate-300 bg-slate-200/80"
+        }`}
+      >
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
             <button onClick={() => nav(addDaysKey(date, -1))} className={navBtn} aria-label="Previous day">
@@ -234,6 +253,9 @@ export function FleetBoard({
             >
               Week
             </Link>
+            <span className={`ml-1 rounded-md px-3 py-1.5 font-heading text-[12px] font-bold tracking-wide ${dayBadge.cls}`} title={fmtLong(date)}>
+              {dayBadge.text}
+            </span>
             {weekend && <span className="ml-1 rounded-full bg-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500">Weekend</span>}
             {telemetryIsSample && (
               <span
