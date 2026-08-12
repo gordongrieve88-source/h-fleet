@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- plain Node boot script, CommonJS on purpose */
 // First boot on a fresh persistent volume: copy the seeded database that
 // shipped inside the bundle to the persistent path (DATABASE_URL under
 // /home/data), then hand over to the server. On every later boot — and

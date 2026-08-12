@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { TruckAssignmentVM, DriverVM } from "@/lib/fleet/catalog";
 import { TRUCK_STATUS, TIMED_STATUS, statusKind, isOnRoad } from "@/lib/wfm/fleet";
 import { startVarianceMinutes } from "@/lib/wfm/analytics";
@@ -87,6 +87,7 @@ export function TruckRow({
   acks: { summary: string; by: string; at: string }[];
 }) {
   const [over, setOver] = useState(false);
+  const statusTimeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const kind = statusKind(row.status);
   const needsCover = !driver && row.status.toUpperCase() === "OFF-ND";
   const timedLabel = TIMED_STATUS[row.status.toUpperCase()] ?? null;
@@ -236,7 +237,18 @@ export function TruckRow({
               type="time"
               defaultValue={row.statusTime ?? ""}
               title={timedLabel}
+              // Save as soon as a complete time exists — waiting for blur lost
+              // the time whenever the dispatcher typed it and switched away.
+              // Short debounce so hour-then-minute edits land as one save.
+              onChange={(e) => {
+                const v = e.target.value;
+                if (statusTimeTimer.current) clearTimeout(statusTimeTimer.current);
+                statusTimeTimer.current = setTimeout(() => {
+                  if (v !== (row.statusTime ?? "")) onStatusTime(v);
+                }, 800);
+              }}
               onBlur={(e) => {
+                if (statusTimeTimer.current) clearTimeout(statusTimeTimer.current);
                 if (e.target.value !== (row.statusTime ?? "")) onStatusTime(e.target.value);
               }}
               className="w-[92px] rounded-md border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10.5px] font-semibold tabular-nums text-amber-800 focus:border-brand-mid focus:outline-none"
