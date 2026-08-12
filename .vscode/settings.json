@@ -1,0 +1,16 @@
+{
+  // Use the repo's TypeScript, not whatever VS Code ships with.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  // The Prisma client is generated code — keep it out of search results and
+  // file watching, or every search for "driver" returns hundreds of hits.
+  "search.exclude": {
+    "**/generated": true,
+    "**/.next": true,
+    "**/node_modules": true
+  },
+  "files.watcherExclude": {
+    "**/generated/**": true,
+    "**/.next/**": true
+  },
+  "editor.codeActionsOnSave": { "source.fixAll.eslint": "explicit" }
+}

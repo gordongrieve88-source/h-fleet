@@ -66,6 +66,22 @@ model AppUser {
   updatedAt DateTime @updatedAt
 
   notifications Notification[]
+  depotScopes   UserDepotScope[]
+  /// Set when this account belongs to a driver (self-service on /me).
+  driver        Driver?
+}
+
+/// Limits a SUPERVISOR to specific depots. No rows = unrestricted (scoping is
+/// an opt-in restriction); MANAGER ignores scope entirely. Enforced in
+/// lib/auth (requireEditForDepot) on every scoped write path.
+model UserDepotScope {
+  userId  Int
+  depotId Int
+
+  user  AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  depot Depot   @relation(fields: [depotId], references: [id], onDelete: Cascade)
+
+  @@id([userId, depotId])
 }
 
 // ============================================================================
@@ -108,6 +124,59 @@ model Notification {
 }
 
 // ============================================================================
+//  INTEGRATIONS  (inbound feeds from other corporate systems)
+// ----------------------------------------------------------------------------
+//  H-Fleet consumes data it doesn't own — people/leave balances from the HR
+//  system, vehicle actuals from telematics. Each connector is a provider
+//  behind one interface (lib/integrations), chosen by configuration, so
+//  swapping a sample provider for the real vendor is a config change.
+// ============================================================================
+
+/// One execution of a connector — the audit trail for automated data changes.
+/// `isSample` is recorded permanently so demo runs can never be mistaken for
+/// real vendor data after the fact.
+model IntegrationRun {
+  id         Int       @id @default(autoincrement())
+  connector  String // "people" / "telematics"
+  provider   String // "sample" / "csv" / "http"
+  isSample   Boolean   @default(false)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  status     String    @default("RUNNING") // RUNNING / OK / FAILED / PREVIEW
+  summary    String    @default("")
+  detail     String? // JSON: counts, errors, per-record notes
+  dryRun     Boolean   @default(false)
+
+  triggeredByUserId Int?
+
+  @@index([connector, startedAt])
+}
+
+/// What a truck actually did on a day, observed by telematics — as opposed to
+/// what the roster planned. Keyed like TruckAssignment so the two line up.
+model TruckTelemetry {
+  id          Int      @id @default(autoincrement())
+  date        DateTime // UTC midnight; treated as a date
+  truckId     String
+  /// Observed first-movement / depot-departure time, "HH:MM" 24h.
+  actualStart String?
+  odometerKm  Float?
+  engineHours Float?
+  /// Vendor fault/DTC code seen that day, if any — feeds breakdown evidence.
+  faultCode   String?
+  source      String   @default("sample")
+  isSample    Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  truck Truck @relation(fields: [truckId], references: [id], onDelete: Cascade)
+
+  @@unique([date, truckId])
+  @@index([date])
+}
+
+// ============================================================================
 //  FLEET  (metro driver/truck daily roster)
 // ----------------------------------------------------------------------------
 //  194 drivers and ~149 agitator trucks across 13 depots, replacing the
@@ -115,13 +184,36 @@ model Notification {
 //  truck), every write audited, leave against the shared LeaveType list.
 // ============================================================================
 
-/// Fleet operating regions (Projects, Metro East/West/Central).
-model FleetRegion {
-  name      String  @id
+/// The operational unit the business dispatches by — "301 — NSW Conc" is the
+/// group the Syncrotess roster is printed for, and the suffix fleet codes
+/// carry (PLC2213-301). As the fleet grows past NSW, each state or business
+/// unit gets its own group, and the whole app can be narrowed to one.
+///
+/// `state` is the jurisdiction the group operates in, which is what depot
+/// credentials are scoped by; a group normally sits in exactly one.
+model DispatchGroup {
+  code      String  @id // "301"
+  name      String // "NSW Conc"
+  state     String  @default("NSW")
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
 
-  depots Depot[]
+  depots  Depot[]
+  regions FleetRegion[]
+}
+
+/// Fleet operating regions (Projects, Metro East/West/Central). Regions
+/// belong to a dispatch group — each group draws its own operating map, so
+/// the depot editor only offers the regions of the group being assigned.
+/// Null = legacy/unassigned, offered everywhere until it's claimed.
+model FleetRegion {
+  name              String  @id
+  dispatchGroupCode String?
+  sortOrder         Int     @default(0)
+  isActive          Boolean @default(true)
+
+  dispatchGroup DispatchGroup? @relation(fields: [dispatchGroupCode], references: [code], onDelete: SetNull)
+  depots        Depot[]
 }
 
 /// A physical home base (Greenacre, Prestons, …). Drivers and trucks belong
@@ -130,12 +222,20 @@ model Depot {
   id         Int     @id @default(autoincrement())
   name       String  @unique
   regionName String
+  /// Which state this depot physically sits in — the anchor for anything
+  /// that varies by jurisdiction (credentials, public holidays). The fleet
+  /// began as NSW-only, hence the default.
+  state      String  @default("NSW")
+  /// Which dispatch group runs this depot. Null until groups are set up.
+  dispatchGroupCode String?
   sortOrder  Int     @default(0)
   isActive   Boolean @default(true)
 
-  region  FleetRegion @relation(fields: [regionName], references: [name])
-  drivers Driver[]
-  trucks  Truck[]
+  dispatchGroup    DispatchGroup?   @relation(fields: [dispatchGroupCode], references: [code], onDelete: SetNull)
+  region           FleetRegion      @relation(fields: [regionName], references: [name])
+  drivers          Driver[]
+  trucks           Truck[]
+  supervisorScopes UserDepotScope[]
 
   @@index([regionName])
 }
@@ -147,12 +247,18 @@ model Driver {
   depotId    Int
   workgroup  String  @default("") // free label from the data: LOD / Metro / Project …
   isActive   Boolean @default(true)
+  /// The sign-in account this driver uses for self-service (/me). Null until
+  /// linked; one account per driver. Set on the Drivers admin screen.
+  appUserId  Int?    @unique
 
-  depot         Depot               @relation(fields: [depotId], references: [id])
+  depot         Depot                @relation(fields: [depotId], references: [id])
+  appUser       AppUser?             @relation(fields: [appUserId], references: [id], onDelete: SetNull)
   leave         DriverLeave[]
   entitlements  DriverEntitlement[]
-  defaultTrucks Truck[]             @relation("TruckDefaultDriver")
+  defaultTrucks Truck[]              @relation("TruckDefaultDriver")
   assignments   TruckAssignment[]
+  credentials   DriverCredential[]
+  profile       DriverProfileValue[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -172,6 +278,8 @@ model Truck {
   /// Vehicle function (Agitator, Tipper, …). Free data — values typed in
   /// admin appear in the board chips and wallboard breakdowns automatically.
   type            String  @default("Agitator")
+  /// Which roster rotation the truck runs in. The fleet's norm is group 2.
+  rosterGroup     Int     @default(2)
   defaultDriverId Int?
   sortOrder       Int     @default(0)
   isActive        Boolean @default(true)
@@ -179,12 +287,88 @@ model Truck {
   depot         Depot             @relation(fields: [depotId], references: [id])
   defaultDriver Driver?           @relation("TruckDefaultDriver", fields: [defaultDriverId], references: [id], onDelete: SetNull)
   assignments   TruckAssignment[]
+  telemetry     TruckTelemetry[]
+  properties    TruckOnProperty[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([depotId])
   @@index([region])
+}
+
+/// One field of the driver onboarding checklist — the information every
+/// driver's profile holds (licence details, white card, emergency contact,
+/// site setups and courses, …). The catalog mirrors the business's
+/// "Onboarding Checklist" workbook and is managed in Setup; values live in
+/// DriverProfileValue. Kind decides the input: TEXT, DATE, or YESNO.
+model DriverProfileField {
+  code      String  @id
+  label     String
+  section   String
+  kind      String  @default("TEXT") // TEXT / DATE / YESNO
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  values DriverProfileValue[]
+}
+
+/// One driver's answer to one checklist field. Stored as a string: ISO date
+/// for DATE, "yes" for a ticked YESNO, free text otherwise. No row = blank.
+model DriverProfileValue {
+  id        Int    @id @default(autoincrement())
+  driverId  Int
+  fieldCode String
+  value     String
+
+  updatedAt DateTime @updatedAt
+
+  driver Driver             @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  field  DriverProfileField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
+
+  @@unique([driverId, fieldCode])
+  @@index([fieldCode])
+}
+
+/// An allocator's acknowledgement, pushed back from the RMX Portal: "your
+/// board change for this truck on this day has been actioned". Keyed by the
+/// RMX change id, so re-sends upsert and a reopen deletes cleanly. Shown as
+/// a green tick on the board row.
+model AllocatorAck {
+  changeId   String   @id
+  date       DateTime // UTC midnight; treated as a date
+  truckId    String
+  summary    String
+  actionedBy String
+  actionedAt DateTime
+
+  @@index([date, truckId])
+}
+
+/// The tick-box attributes a truck can carry — the allocation system's
+/// property codes (Automatic Transmission, UHF Radio Fitted, PBS, …). The
+/// catalog is reference data managed in Setup; each truck ticks its own on
+/// Fleet → Trucks. The code is what the allocation system prints, so it is
+/// the identity and can't be edited after the fact.
+model TruckProperty {
+  code      String  @id
+  name      String
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  trucks TruckOnProperty[]
+}
+
+model TruckOnProperty {
+  id           Int    @id @default(autoincrement())
+  truckId      String
+  propertyCode String
+
+  truck    Truck         @relation(fields: [truckId], references: [id], onDelete: Cascade)
+  property TruckProperty @relation(fields: [propertyCode], references: [code], onDelete: Cascade)
+
+  @@unique([truckId, propertyCode])
+  @@index([propertyCode])
 }
 
 /// The saved daily board — one row per (date, truck). A date with no rows is
@@ -194,9 +378,20 @@ model TruckAssignment {
   id       Int      @id @default(autoincrement())
   date     DateTime // UTC midnight; treated as a date
   truckId  String
-  status   String   @default("ON") // ON / ON-FTO / … / OFF-BD / OFF-ND (lib/wfm/fleet.ts)
+  status   String   @default("ON") // ON / ON-LS / … / OFF-BD / OFF-ND (lib/wfm/fleet.ts)
   driverId Int?
   time     String?
+  /// The planned time behind a timed status — a late start's start, an early
+  /// finish's finish, service/dedag either way ("HH:MM"). Cleared when the
+  /// status stops being a timed one.
+  statusTime String?
+  /// First truck out — the truck whose turn it is to leave the plant first.
+  /// One per block per day, advanced cyclically (alphanumeric order) from the
+  /// previous day; the board shows the block's list rotated to start here.
+  fto Boolean @default(false)
+  /// Where the truck works THIS day (from the Syncrotess Location column) —
+  /// often its home plant, but trucks get lent across plants day by day.
+  workLocation String?
   note     String?
 
   createdByUserId Int?
@@ -234,6 +429,63 @@ model DriverLeave {
 
   @@index([driverId, startDate])
   @@index([status])
+}
+
+/// Everything a driver can hold — editable in Setup like LeaveType.
+///
+/// Two kinds, because the fleet tracks two different things:
+///   EXPIRY  — a dated ticket (HC licence, medical, site induction that
+///             lapses). `severity` decides what an EXPIRED one does:
+///             "BLOCK" refuses to roster the driver, "WARN" only flags.
+///             `warnDays` is the expiring-soon window.
+///   TICKBOX — a competency they either hold or don't (trained on a mix,
+///             signed off on a truck type, inducted to a site). No date.
+///
+/// `category` groups them on the driver's profile ("Truck types", "Mixes",
+/// "Site inductions") and is free data — a new grouping is just a new label.
+///
+/// `requiredForTruckType` is the enforceable one: set it to a Truck.type and
+/// a driver who doesn't hold this credential cannot be rostered onto a truck
+/// of that type. Site inductions stay informational because the board knows
+/// which plant a truck works from, not which customer job it's sent to.
+model CredentialType {
+  code                 String  @id
+  name                 String
+  kind                 String  @default("EXPIRY") // EXPIRY / TICKBOX
+  category             String  @default("Tickets & medicals")
+  /// Where this credential applies: "ALL", or a CSV of states like
+  /// "NSW,VIC" — same wire format as PublicHoliday.states. A driver only
+  /// sees, and is only gated by, credentials that apply in their depot's
+  /// state, so a NSW-only ticket never follows the fleet interstate.
+  states               String  @default("ALL")
+  severity             String  @default("WARN") // WARN / BLOCK
+  warnDays             Int     @default(30)
+  requiredForTruckType String?
+  sortOrder            Int     @default(0)
+  isActive             Boolean @default(true)
+
+  credentials DriverCredential[]
+}
+
+/// One credential a driver holds — a licence, medical or induction, with an
+/// optional reference number and expiry. Renewal = update the expiry (one
+/// row per driver per type). Null expiresOn = never expires.
+model DriverCredential {
+  id        Int       @id @default(autoincrement())
+  driverId  Int
+  typeCode  String
+  reference String?
+  expiresOn DateTime? // UTC midnight; treated as a date
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  driver Driver         @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  type   CredentialType @relation(fields: [typeCode], references: [code])
+
+  @@unique([driverId, typeCode])
+  @@index([expiresOn])
 }
 
 /// Annual entitlement per driver/type/year — drives the AL balance shown in

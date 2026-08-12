@@ -56,7 +56,9 @@ export function CommandPalette({ pages, people }: { pages: PaletteEntry[]; peopl
       .slice(0, 9);
   }, [query, pages, people]);
 
-  useEffect(() => setIndex(0), [results.length]);
+  // Keep the highlight inside the list as results shrink — clamped in
+  // render, not in an effect (typing resets it via onChange).
+  const sel = Math.min(index, Math.max(0, results.length - 1));
 
   function go(href: string) {
     setOpen(false);
@@ -82,16 +84,19 @@ export function CommandPalette({ pages, people }: { pages: PaletteEntry[]; peopl
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setIndex(0);
+            }}
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
-                setIndex((i) => Math.min(i + 1, results.length - 1));
+                setIndex(Math.min(sel + 1, results.length - 1));
               } else if (e.key === "ArrowUp") {
                 e.preventDefault();
-                setIndex((i) => Math.max(i - 1, 0));
-              } else if (e.key === "Enter" && results[index]) {
-                go(results[index].href);
+                setIndex(Math.max(sel - 1, 0));
+              } else if (e.key === "Enter" && results[sel]) {
+                go(results[sel].href);
               }
             }}
             placeholder="Jump to a page or person…"
@@ -112,7 +117,7 @@ export function CommandPalette({ pages, people }: { pages: PaletteEntry[]; peopl
                   onMouseEnter={() => setIndex(i)}
                   onClick={() => go(r.href)}
                   className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm ${
-                    i === index ? "bg-brand-mid/10 text-brand-deep" : "text-slate-700"
+                    i === sel ? "bg-brand-mid/10 text-brand-deep" : "text-slate-700"
                   }`}
                 >
                   <span className="font-medium">{r.label}</span>

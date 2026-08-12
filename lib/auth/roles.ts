@@ -1,13 +1,15 @@
 /**
  * Roles, from least to most privileged:
  *   STAFF      — view only
- *   SUPERVISOR — STAFF, plus may edit the board, fleet master data and Setup
- *                and approve driver leave. Does NOT see the management
- *                insights (Fleet reports).
- *   MANAGER    — full access to everything, including the insights screens
- *                (Fleet reports).
+ *   SUPERVISOR — STAFF, plus may edit the board, drivers/trucks and driver
+ *                leave (incl. approvals) — limited to their depot scope when
+ *                one is set (lib/auth/scope.ts). No Fleet reports, and no
+ *                org structure (regions/depots) or Setup.
+ *   MANAGER    — full access to everything: insights (Fleet reports), org
+ *                structure and Setup, always unrestricted by depot scope.
  *
- * Stored on AppUser.role; in production derived from the Entra ID account.
+ * Stored on AppUser.role; with AUTH_MODE=entra it comes from the Entra app
+ * roles claim on every sign-in (lib/auth/entra-profile.ts).
  */
 export const ROLES = {
   STAFF: "STAFF",
@@ -29,6 +31,11 @@ export function isApproverRole(role: string | null | undefined): boolean {
 
 /** Only Manager sees the management insights (Fleet reports). */
 export function isInsightsRole(role: string | null | undefined): boolean {
+  return role === ROLES.MANAGER;
+}
+
+/** Only Manager touches org structure (regions/depots) and Setup. */
+export function isManagerRole(role: string | null | undefined): boolean {
   return role === ROLES.MANAGER;
 }
 

@@ -1,0 +1,51 @@
+/**
+ * Site setups & courses — the region-specific slice of the onboarding
+ * checklist. These live as TICKBOX competencies (not profile fields) so the
+ * state scoping applies: seeded NSW because the workbook is the NSW fleet's
+ * list, and other regions add their own in Setup. A ticked item can carry a
+ * small free-text detail (card number, certificate year, booked date).
+ */
+export const SITE_COURSES: { code: string; label: string }[] = [
+  { code: "VERSAFLOW_DEC", label: "Versaflow dec complete (tunnel drivers only)" },
+  { code: "SMIC_TAFE", label: "SMIC TAFE certificate" },
+  { code: "DSS3_SETUP", label: "Basic 3DSS set up" },
+  { code: "DAMSTRA_CARD", label: "Basic Damstra set up — card number" },
+  { code: "SILICA_TAFE", label: "Silica awareness and safety (TAFE NSW)" },
+  { code: "SPIRO_AUDIO", label: "Spirometry and audio tests" },
+  { code: "VRU", label: "VRU course uploaded" },
+  { code: "M6_ONLINE_SETUP", label: "M6 online setup" },
+  { code: "M6_ONLINE_DONE", label: "M6 online completed" },
+  { code: "M6_F2F_BOOKED", label: "M6 F2F date booked" },
+  { code: "M6_F2F_DONE", label: "M6 F2F complete" },
+  { code: "WFU_SETUP", label: "WFU basic set up" },
+  { code: "WFU_ONLINE_SETUP", label: "WFU online set up" },
+  { code: "WFU_ONLINE_DONE", label: "WFU online induction complete" },
+  { code: "WFU_F2F_BOOKED", label: "WFU F2F date booked" },
+  { code: "WFU_F2F_DONE", label: "WFU F2F complete" },
+  { code: "WHT_SETUP", label: "WHT basic set up" },
+  { code: "WHT_ONLINE_SETUP", label: "WHT online set up" },
+  { code: "WHT_ONLINE_DONE", label: "WHT online complete" },
+  { code: "WHT_CARD", label: "WHT card issued" },
+  { code: "WHT_VERSAFLOW", label: "WHT Versaflow form" },
+  { code: "WHT_F2F_BOOKED", label: "WHT F2F date booked" },
+  { code: "WHT_F2F_DONE", label: "WHT F2F complete" },
+  { code: "WCX_ONLINE_DONE", label: "WCX online complete" },
+  { code: "USC_SETUP", label: "USC WTP basic set up" },
+  { code: "USC_ONLINE_SETUP", label: "USC WTP online set up" },
+  { code: "USC_ONLINE_DONE", label: "USC WTP online complete" },
+  { code: "USC_F2F_BOOKED", label: "USC WTP F2F date booked" },
+  { code: "USC_F2F_DONE", label: "USC WTP F2F complete" },
+  { code: "FHDAT_SETUP", label: "FH / DAT basic set up" },
+  { code: "FHDAT_ONLINE_SETUP", label: "FH / DAT online set up" },
+  { code: "FHDAT_ONLINE_DONE", label: "FH / DAT online complete" },
+  { code: "FHDAT_F2F_BOOKED", label: "FH / DAT F2F date booked" },
+  { code: "FHDAT_F2F_DONE", label: "FH / DAT F2F complete" },
+  { code: "BEAKON_SW", label: "Beakon Sydney Water online complete" },
+  { code: "DSS3_NWHA_DONE", label: "3DSS NWHA online complete" },
+  { code: "ADDITIONAL_MODULE", label: "Additional module completed" },
+  { code: "DSS3_ONLINE_SETUP", label: "3DSS online set up" },
+  { code: "VOC", label: "VOC uploaded" },
+  { code: "PPTP_ONLINE_DONE", label: "PPTP online complete" },
+  { code: "PPTP_F2F_BOOKED", label: "PPTP F2F date booked" },
+  { code: "PPTP_F2F_DONE", label: "PPTP F2F complete" },
+];

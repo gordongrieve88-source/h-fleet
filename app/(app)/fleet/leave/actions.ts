@@ -1,10 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireEdit } from "@/lib/auth";
-import { driverLeaveRepo, fleetRepo, notificationRepo } from "@/lib/db/repositories";
+import { requireEdit, requireEditForDepot } from "@/lib/auth";
+import { driverLeaveRepo, fleetRepo, fleetBoardRepo, notificationRepo } from "@/lib/db/repositories";
 import { logAction } from "@/lib/audit";
-import { dateFromKey, parseYmdOrNull, fmtRange } from "@/lib/wfm/date";
+import { dateFromKey, parseYmdOrNull, fmtRange, ymd } from "@/lib/wfm/date";
+import { pushRosterChanges } from "@/lib/integrations/rmx-push";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -33,6 +34,8 @@ export async function addDriverLeave(
   try {
     const driver = await fleetRepo.getDriver(driverId);
     if (!driver || !driver.isActive) return { ok: false, error: "Unknown driver." };
+    await requireEditForDepot(driver.depotId, user); // leave is scoped by the driver's depot
+    const dropped: { date: Date; truckId: string }[] = [];
     for (const s of segments) {
       await driverLeaveRepo.add({
         driverId,
@@ -42,6 +45,12 @@ export async function addDriverLeave(
         status,
         createdByUserId: user.id,
       });
+      // Booked leave blocks the board immediately: already-saved days in the
+      // range must release the driver and turn their trucks off, exactly as
+      // an approval does. Unsaved days handle it in synthesis.
+      if (status === "APPROVED") {
+        dropped.push(...(await fleetBoardRepo.dropDriverFromRange(driverId, dateFromKey(s.start), dateFromKey(s.end))));
+      }
     }
     const range = fmtRange(dateFromKey(segments[0].start), dateFromKey(segments[segments.length - 1].end));
     await logAction(
@@ -59,6 +68,18 @@ export async function addDriverLeave(
         href: "/approvals",
       });
     }
+    // Tell the allocators which trucks just lost their driver, day by day.
+    const byDay = new Map<string, string[]>();
+    for (const hit of dropped) {
+      const k = ymd(hit.date);
+      byDay.set(k, [...(byDay.get(k) ?? []), hit.truckId]);
+    }
+    for (const [dayKey, trucks] of byDay) {
+      await pushRosterChanges(
+        dayKey,
+        trucks.map((truck) => ({ truck, summary: `OFF-ND — driver on ${leaveTypeCode} leave`, status: "OFF-ND" })),
+      );
+    }
     refresh();
     return { ok: true };
   } catch (e) {
@@ -69,6 +90,9 @@ export async function addDriverLeave(
 export async function removeDriverLeave(id: number): Promise<ActionResult> {
   const user = await requireEdit();
   try {
+    const existing = await driverLeaveRepo.getById(id);
+    if (!existing) return { ok: false, error: "That booking no longer exists." };
+    await requireEditForDepot(existing.driver.depotId, user);
     const rec = await driverLeaveRepo.remove(id);
     await logAction(
       user,
@@ -79,7 +103,9 @@ export async function removeDriverLeave(id: number): Promise<ActionResult> {
     );
     refresh();
     return { ok: true };
-  } catch {
+  } catch (e) {
+    const msg = String(e);
+    if (msg.includes("Forbidden")) return { ok: false, error: msg.replace(/^Error:\s*/, "").slice(0, 160) };
     return { ok: false, error: "That booking no longer exists." };
   }
 }

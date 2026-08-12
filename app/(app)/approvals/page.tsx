@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, getDepotScope } from "@/lib/auth";
 import { isApproverRole } from "@/lib/auth/roles";
+import { depotInScope } from "@/lib/auth/scope";
 import { driverLeaveRepo, fleetRepo } from "@/lib/db/repositories";
 import { PageHeader, Card } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
@@ -14,11 +15,14 @@ export default async function ApprovalsPage() {
   const today = todayUTC();
   const thirtyDaysAgo = addDaysUTC(today, -30);
 
-  const [pendingDriverLeave, recentDriverLeave, fleetDepots] = await Promise.all([
+  const [allPendingDriverLeave, recentDriverLeave, fleetDepots, depotScope] = await Promise.all([
     driverLeaveRepo.listPending(),
     driverLeaveRepo.listDecidedSince(thirtyDaysAgo),
     fleetRepo.listDepots(),
+    getDepotScope(user),
   ]);
+  // Depot-scoped supervisors only see (and bulk-approve) their own depots.
+  const pendingDriverLeave = allPendingDriverLeave.filter((lv) => depotInScope(depotScope, lv.driver.depotId));
 
   // Driver-leave impact: would approving stretch the driver's depot past the
   // planner's flag (≥30% of the depot off, min 2) on any working day?

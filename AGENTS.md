@@ -15,7 +15,10 @@ projects or copy code between them without being asked.
 
 - Stack: Next.js 16, Prisma 7 + local SQLite (`prisma/dev.db`), Tailwind 4.
 - Dev server: `npm run dev` (pinned to port 3002; if 3002 is taken — often by
-  LoungeIQ — use another port). `npm run demo` = migrate + seed + dev.
+  LoungeIQ — use another port). `npm run demo` = generate + migrate + seed +
+  dev. After a pull run `npm install && npm run demo`: neither `node_modules`
+  nor `generated/` is committed, so bare `npm run dev` misses new dependencies
+  (`Module not found`) and new schema (queries on the new model throw).
 - Demo auth: cookie `hfleet_user_id` holding an AppUser id (h-crew uses a
   different cookie; they coexist on localhost). User id 1 = Gordon Grieve,
   MANAGER (full access).

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   IconTv,
@@ -13,7 +14,7 @@ import {
   IconTruck,
 } from "./Icons";
 
-type Access = "all" | "approve" | "insights" | "edit";
+type Access = "all" | "approve" | "insights" | "edit" | "admin";
 
 const GROUPS: {
   label: string | null;
@@ -22,12 +23,17 @@ const GROUPS: {
   {
     label: "Fleet",
     links: [
+      { href: "/me", label: "My roster", access: "all", icon: IconPeople },
       { href: "/fleet", label: "Fleet board", access: "all", icon: IconTruck },
+      { href: "/fleet/week", label: "Week ahead", access: "all", icon: IconChart },
       { href: "/fleet/leave", label: "Driver leave", access: "edit", icon: IconPlane },
+      { href: "/fleet/import", label: "Import allocations", access: "edit", icon: IconHistory },
+      { href: "/fleet/compliance", label: "Compliance", access: "edit", icon: IconCheckBadge },
       { href: "/fleet/reports", label: "Fleet reports", access: "insights", icon: IconChart },
+      { href: "/fleet/intelligence", label: "Fleet intelligence", access: "insights", icon: IconChart },
       { href: "/fleet/drivers", label: "Drivers", access: "edit", icon: IconPeople },
       { href: "/fleet/trucks", label: "Trucks", access: "edit", icon: IconTruck },
-      { href: "/fleet/depots", label: "Depots", access: "edit", icon: IconSettings },
+      { href: "/fleet/depots", label: "Depots", access: "admin", icon: IconSettings },
     ],
   },
   {
@@ -39,7 +45,10 @@ const GROUPS: {
   },
   {
     label: "Admin",
-    links: [{ href: "/setup", label: "Setup", access: "edit", icon: IconSettings }],
+    links: [
+      { href: "/integrations", label: "Integrations", access: "admin", icon: IconHistory },
+      { href: "/setup", label: "Setup", access: "admin", icon: IconSettings },
+    ],
   },
 ];
 
@@ -53,11 +62,14 @@ export function Sidebar({
   canEdit,
   canApprove,
   canInsights,
+  canManage,
   userCard,
 }: {
   canEdit: boolean;
   canApprove: boolean;
   canInsights: boolean;
+  /** Manager-only areas: org structure (Depots) and Setup. */
+  canManage: boolean;
   /** Server-rendered user block (name, role badge, switcher) slotted in. */
   userCard: React.ReactNode;
 }) {
@@ -66,13 +78,14 @@ export function Sidebar({
     access === "all" ||
     (access === "approve" && canApprove) ||
     (access === "insights" && canInsights) ||
-    (access === "edit" && canEdit);
+    (access === "edit" && canEdit) ||
+    (access === "admin" && canManage);
 
   return (
     <aside className="on-dark print-hide sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-brand-deep text-white">
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-5 pb-5 pt-6">
-        <img src="/logo.png" alt="H-Fleet" className="h-9 w-9" />
+                  <Image src="/logo.png" alt="H-Fleet" width={36} height={36} className="h-9 w-9" />
         <div className="leading-tight">
           <div className="font-heading text-[15px] font-semibold tracking-tight">
             H-<span className="text-brand-bright">Fleet</span>

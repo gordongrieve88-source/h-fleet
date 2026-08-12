@@ -1,29 +1,32 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FleetCatalogVM, TruckAssignmentVM, DriverVM, LeaveTypeVM } from "@/lib/fleet/catalog";
-import { TRUCK_STATUS, availFor } from "@/lib/wfm/fleet";
+import { TRUCK_STATUS, availFor, awayPlant, ftoRotate, hostBlockFor, parseTimeEntry, truckOrder } from "@/lib/wfm/fleet";
+import { addDaysKey, dateFromKey, isWeekendKey, mondayOf, todayKey, ymd } from "@/lib/wfm/date";
 import { Kpi } from "./Kpi";
 import { TruckRow } from "./TruckRow";
 import { DriverChip } from "./DriverChip";
 import { PickerField } from "./DatePicker";
 import { useToast } from "@/components/Toast";
-import { moveDriver, setTruckStatus, clearTruckDriver, resetBoardDay } from "@/app/(app)/fleet/actions";
+import {
+  moveDriver,
+  setTruckStatus,
+  setTruckStatusTime,
+  setTruckStatusBulk,
+  setTruckWorkDepot,
+  setFirstTruckOut,
+  clearTruckDriver,
+  resetBoardDay,
+} from "@/app/(app)/fleet/actions";
+import { TIMED_STATUS } from "@/lib/wfm/fleet";
 
 const STATUS_CODES = Object.keys(TRUCK_STATUS);
 
 export type DoctorIssueGroup = { kind: "critical" | "warn" | "info"; label: string; items: string[] };
 
-const pad = (n: number) => String(n).padStart(2, "0");
-function addDaysIso(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-}
-function isoToday(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Australia/Sydney" });
-}
 function fmtLong(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-AU", {
     weekday: "long",
@@ -32,10 +35,6 @@ function fmtLong(iso: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
-}
-function isWeekendIso(iso: string): boolean {
-  const dow = new Date(`${iso}T00:00:00Z`).getUTCDay();
-  return dow === 0 || dow === 6;
 }
 
 export function FleetBoard({
@@ -46,7 +45,11 @@ export function FleetBoard({
   leaveTypes,
   doctor,
   canEdit,
+  editableDepots,
   isCaptured,
+  actualStarts,
+  telemetryIsSample,
+  allocatorAcks,
 }: {
   date: string;
   catalog: FleetCatalogVM;
@@ -55,14 +58,45 @@ export function FleetBoard({
   leaveTypes: LeaveTypeVM[];
   doctor: DoctorIssueGroup[];
   canEdit: boolean;
+  /** Depot names this user may edit; null = unrestricted. */
+  editableDepots: string[] | null;
   /** Whether this day is saved history vs a live roll-forward synthesis. */
   isCaptured: boolean;
+  /** Observed departure per truck from telematics, "HH:MM". */
+  actualStarts: Record<string, string | null>;
+  /** True when today's telemetry came from a demonstration provider. */
+  telemetryIsSample: boolean;
+  /** Allocator acknowledgements pushed back from the RMX Portal, per truck. */
+  allocatorAcks: Record<string, { summary: string; by: string; at: string }[]>;
 }) {
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [regionFilter, setRegionFilter] = useState("All");
-  const [drag, setDrag] = useState<{ from: string; driverId: number } | null>(null);
+  // Two ways to move a driver: desktop mouse drag, or tap-to-pick then
+  // tap-to-place (the only way on touch screens, where HTML5 drag never fires).
+  const [drag, setDrag] = useState<number | null>(null);
+  const [picked, setPicked] = useState<number | null>(null);
+  // Bulk-select: tick several trucks (usually one plant) and set their
+  // status in one go — half the fleet on early finish is one action.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState("ON-EF");
+  const [bulkTime, setBulkTime] = useState("");
+
+  // A new day is a new selection (state-reset-on-prop-change, done in render).
+  const [selectedDate, setSelectedDate] = useState(date);
+  if (selectedDate !== date) {
+    setSelectedDate(date);
+    setSelected(new Set());
+  }
+
+  const toggleSelect = (truckId: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(truckId)) next.delete(truckId);
+      else next.add(truckId);
+      return next;
+    });
 
   const driverById = useMemo(() => {
     const m = new Map<number, DriverVM>();
@@ -73,6 +107,14 @@ export function FleetBoard({
   const truckBlock = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.block])), [catalog.trucks]);
   const truckRegion = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.region])), [catalog.trucks]);
   const truckType = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.type])), [catalog.trucks]);
+  const truckHome = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.id, t.depot])), [catalog.trucks]);
+  // Per-truck editability: the user's role AND their depot scope must allow it.
+  const editableSet = useMemo(() => (editableDepots === null ? null : new Set(editableDepots)), [editableDepots]);
+  const rowEditable = useMemo(() => {
+    const depotByTruck = Object.fromEntries(catalog.trucks.map((t) => [t.id, t.depot]));
+    return (truckId: string) => canEdit && (editableSet === null || editableSet.has(depotByTruck[truckId]));
+  }, [catalog.trucks, canEdit, editableSet]);
+  const canReset = canEdit && editableSet === null; // resetting sweeps every depot
   // Show a type tag on the board only when the fleet actually has mixed types.
   const mixedTypes = useMemo(() => new Set(catalog.trucks.map((t) => t.type)).size > 1, [catalog.trucks]);
   const blocksByRegion = useMemo(() => {
@@ -83,6 +125,26 @@ export function FleetBoard({
     }
     return m;
   }, [catalog.trucks]);
+
+  // A truck lent to another plant (imported work location) sits in the HOST
+  // plant's card for the day — badged "from <home>" — and snaps home the next
+  // day, because the location is per-day data. No block of that plant known →
+  // it stays at home tagged "@ plant".
+  const visiting = useMemo(() => {
+    const allBlocks = [...new Set(catalog.trucks.map((t) => t.block))];
+    const out: Record<string, { block: string; homePlant: string } | undefined> = {};
+    for (const r of rows) {
+      const home = truckBlock[r.truck];
+      const away = awayPlant(r.workLocation, truckHome[r.truck] ?? "");
+      if (!home || !away) continue;
+      const host = hostBlockFor(home, away, allBlocks);
+      if (host && host !== home) out[r.truck] = { block: host, homePlant: home.split(/\s+/)[0] ?? home };
+    }
+    return out;
+  }, [rows, catalog.trucks, truckBlock, truckHome]);
+  const effectiveBlock = (truckId: string) => visiting[truckId]?.block ?? truckBlock[truckId];
+  // Region cards follow the day's working plant too.
+  const blockRegion = useMemo(() => Object.fromEntries(catalog.trucks.map((t) => [t.block, t.region])), [catalog.trucks]);
 
   const fleet = useMemo(() => availFor(rows), [rows]);
   const onLeaveIds = useMemo(() => new Set(onLeave.map((l) => l.driverId)), [onLeave]);
@@ -100,24 +162,73 @@ export function FleetBoard({
 
   const nav = (iso: string) => router.push(`/fleet?d=${iso}`);
 
-  const handleDrop = (toTruck: string) => {
-    if (!drag) return;
-    const { from, driverId } = drag;
+  const doMove = (driverId: number, toTruck: string) => {
     setDrag(null);
-    go(() => moveDriver(date, from, driverId, toTruck));
+    setPicked(null);
+    go(() => moveDriver(date, driverId, toTruck));
   };
 
+  const handleDrop = (toTruck: string) => {
+    if (drag != null) doMove(drag, toTruck);
+  };
+
+  /** Tap a chip: pick the driver up; tap the same driver again: put them down. */
+  const pick = (driverId: number) => setPicked((prev) => (prev === driverId ? null : driverId));
+  const pickedDriver = picked != null ? (driverById.get(picked) ?? null) : null;
+
+  // Escape cancels a picked-up driver.
+  useEffect(() => {
+    if (picked == null) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPicked(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picked]);
+
+  // Keep the board live for other dispatchers' edits: refresh when the tab
+  // comes back into view and once a minute while idle — never mid-move.
+  useEffect(() => {
+    if (drag != null || picked != null) return;
+    const refresh = () => {
+      if (!document.hidden && !pending) router.refresh();
+    };
+    const id = setInterval(refresh, 60_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [router, drag, picked, pending]);
+
   const regions = regionFilter === "All" ? catalog.regions : [regionFilter];
-  const weekend = isWeekendIso(date);
+  const weekend = isWeekendKey(date);
+  // Which day am I actually editing? The one mistake this board invites is
+  // planning tomorrow's day on today's date — so today and every other day
+  // must be impossible to confuse at a glance.
+  const dayOffset = Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${todayKey()}T00:00:00Z`)) / 86_400_000);
+  const dayBadge =
+    dayOffset === 0
+      ? { text: "TODAY", cls: "bg-brand-mid text-white" }
+      : dayOffset === 1
+        ? { text: "PLANNING — TOMORROW", cls: "bg-violet-600 text-white" }
+        : dayOffset > 1
+          ? { text: `PLANNING — IN ${dayOffset} DAYS`, cls: "bg-violet-600 text-white" }
+          : dayOffset === -1
+            ? { text: "PAST DAY — YESTERDAY", cls: "bg-slate-600 text-white" }
+            : { text: `PAST DAY — ${-dayOffset} DAYS AGO`, cls: "bg-slate-600 text-white" };
   const doctorCount = doctor.reduce((a, g) => a + g.items.length, 0);
 
   return (
     <div className={pending ? "opacity-70 transition-opacity" : ""}>
-      {/* Controls — sticks just below the app topbar. */}
-      <div className="print-hide sticky top-14 z-30 -mx-5 mb-4 border-b border-slate-200 bg-brand-sand/70 px-5 py-3 backdrop-blur">
+      {/* Controls — sticks just below the app topbar. The bar itself changes
+          colour away from today, so the whole context reads differently. */}
+      <div
+        className={`print-hide sticky top-14 z-30 -mx-5 mb-4 border-b px-5 py-3 backdrop-blur ${
+          dayOffset === 0 ? "border-slate-200 bg-brand-sand/70" : dayOffset > 0 ? "border-violet-200 bg-violet-100/80" : "border-slate-300 bg-slate-200/80"
+        }`}
+      >
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <button onClick={() => nav(addDaysIso(date, -1))} className={navBtn} aria-label="Previous day">
+            <button onClick={() => nav(addDaysKey(date, -1))} className={navBtn} aria-label="Previous day">
               ‹
             </button>
             <PickerField
@@ -127,16 +238,34 @@ export function FleetBoard({
               buttonLabel={fmtLong(date)}
               buttonClassName="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-brand-deep hover:bg-slate-50"
             />
-            <button onClick={() => nav(addDaysIso(date, 1))} className={navBtn} aria-label="Next day">
+            <button onClick={() => nav(addDaysKey(date, 1))} className={navBtn} aria-label="Next day">
               ›
             </button>
             <button
-              onClick={() => nav(isoToday())}
+              onClick={() => nav(todayKey())}
               className="ml-1 rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
             >
               Today
             </button>
+            <Link
+              href={`/fleet/week?w=${ymd(mondayOf(dateFromKey(date)))}`}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              title="Cover planning for this week"
+            >
+              Week
+            </Link>
+            <span className={`ml-1 rounded-md px-3 py-1.5 font-heading text-[12px] font-bold tracking-wide ${dayBadge.cls}`} title={fmtLong(date)}>
+              {dayBadge.text}
+            </span>
             {weekend && <span className="ml-1 rounded-full bg-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500">Weekend</span>}
+            {telemetryIsSample && (
+              <span
+                className="ml-1 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800"
+                title="Actual start times on this day came from the sample telematics provider — demonstration data, not the real vendor."
+              >
+                Sample actuals
+              </span>
+            )}
             <span
               className={`ml-1 rounded-full px-2 py-1 text-[11px] font-medium ${
                 isCaptured ? "bg-brand-mid/15 text-brand-deep" : "border border-dashed border-slate-300 text-slate-400"
@@ -177,7 +306,7 @@ export function FleetBoard({
               {r}
             </button>
           ))}
-          {canEdit && isCaptured && (
+          {canReset && isCaptured && (
             <button
               onClick={() => {
                 if (window.confirm("Discard every edit on this day and revert to the roll-forward default?")) {
@@ -197,7 +326,7 @@ export function FleetBoard({
         <div className="min-w-0 flex-1">
           {regions.map((region) => {
             const blocks = blocksByRegion[region] ?? [];
-            const regionRows = rows.filter((a) => truckRegion[a.truck] === region);
+            const regionRows = rows.filter((a) => (blockRegion[effectiveBlock(a.truck) ?? ""] ?? truckRegion[a.truck]) === region);
             if (regionRows.length === 0) return null;
             const ra = availFor(regionRows);
             return (
@@ -210,13 +339,42 @@ export function FleetBoard({
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(310px,1fr))] gap-3.5">
                   {blocks.map((block) => {
-                    const bRows = rows.filter((a) => truckBlock[a.truck] === block);
+                    // FTO order for the plant's own trucks — alphanumeric,
+                    // rotated so the first truck out leads — with the day's
+                    // visitors appended after the cycle (they don't take a
+                    // turn in the host plant's rotation).
+                    const members = ftoRotate(rows.filter((a) => effectiveBlock(a.truck) === block && truckBlock[a.truck] === block));
+                    const guests = rows
+                      .filter((a) => effectiveBlock(a.truck) === block && truckBlock[a.truck] !== block)
+                      .sort((a, b) => truckOrder(a.truck, b.truck))
+                      .map((a) => ({ ...a, fto: false })); // home FTO flag means nothing here
+                    const bRows = [...members, ...guests];
                     if (bRows.length === 0) return null;
                     const ba = availFor(bRows);
                     return (
                       <div key={block} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
                         <div className="mb-2 flex items-center justify-between">
-                          <div className="text-sm font-semibold text-brand-deep">{block}</div>
+                          <div className="flex items-center gap-1.5 text-sm font-semibold text-brand-deep">
+                            {canEdit && (
+                              <input
+                                type="checkbox"
+                                checked={bRows.every((r) => selected.has(r.truck)) && bRows.length > 0}
+                                onChange={(e) =>
+                                  setSelected((prev) => {
+                                    const next = new Set(prev);
+                                    for (const r of bRows) {
+                                      if (e.target.checked) next.add(r.truck);
+                                      else next.delete(r.truck);
+                                    }
+                                    return next;
+                                  })
+                                }
+                                title={`Select every truck in ${block} for a bulk status change`}
+                                className="h-3 w-3 accent-[#00843d]"
+                              />
+                            )}
+                            {block}
+                          </div>
                           <AvailBadge pct={ba.pct} on={ba.on} total={ba.total} />
                         </div>
                         <div className="flex flex-col gap-1.5">
@@ -224,15 +382,43 @@ export function FleetBoard({
                             <TruckRow
                               key={a.truck}
                               row={a}
+                              awayTag={(() => {
+                                const v = visiting[a.truck];
+                                if (v && v.block === block)
+                                  return { label: `from ${v.homePlant}`, title: `Home plant ${v.homePlant} — working here today (imported allocation)` };
+                                const away = awayPlant(a.workLocation, truckHome[a.truck] ?? "");
+                                return away ? { label: `@ ${away}`, title: `Working at ${away} today` } : null;
+                              })()}
                               typeTag={mixedTypes ? (truckType[a.truck] ?? null) : null}
                               driver={a.driverId != null ? (driverById.get(a.driverId) ?? null) : null}
                               statusCodes={STATUS_CODES}
-                              canEdit={canEdit}
+                              canEdit={rowEditable(a.truck)}
                               onStatus={(s) => go(() => setTruckStatus(date, a.truck, s))}
+                              onStatusTime={(t) => go(() => setTruckStatusTime(date, a.truck, t))}
+                              onSetFto={() => go(() => setFirstTruckOut(date, a.truck))}
+                              homeBlock={truckBlock[a.truck] ?? ""}
+                              depotBlocks={(() => {
+                                // Same dispatch group (region) as the truck's home,
+                                // plus wherever it's already visiting today.
+                                const opts = (blocksByRegion[truckRegion[a.truck]] ?? []).filter((b) => b !== truckBlock[a.truck]);
+                                const wb = visiting[a.truck]?.block;
+                                if (wb && !opts.includes(wb)) opts.push(wb);
+                                return opts.sort((x, y) => x.localeCompare(y));
+                              })()}
+                              workBlock={visiting[a.truck]?.block ?? ""}
+                              onWorkDepot={(b) => go(() => setTruckWorkDepot(date, a.truck, b))}
                               onClearDriver={() => go(() => clearTruckDriver(date, a.truck))}
-                              dragActive={!!drag}
-                              onDragStartDriver={() => a.driverId != null && setDrag({ from: a.truck, driverId: a.driverId })}
+                              dragActive={drag != null}
+                              onDragStartDriver={() => a.driverId != null && setDrag(a.driverId)}
                               onDropDriver={() => handleDrop(a.truck)}
+                              onPickDriver={() => a.driverId != null && pick(a.driverId)}
+                              pickedDriver={a.driverId != null && a.driverId === picked}
+                              placeActive={rowEditable(a.truck) && picked != null}
+                              onPlace={() => picked != null && doMove(picked, a.truck)}
+                              actualStart={actualStarts[a.truck] ?? null}
+                              selected={selected.has(a.truck)}
+                              onToggleSelect={() => toggleSelect(a.truck)}
+                              acks={allocatorAcks[a.truck] ?? []}
                             />
                           ))}
                         </div>
@@ -287,11 +473,18 @@ export function FleetBoard({
               Spare drivers <span className="font-normal text-slate-400">({spares.length})</span>
             </div>
             <div className="mb-2 mt-0.5 text-[11px] text-slate-400">
-              {canEdit ? "Drag onto any truck to assign." : "Unassigned and available today."}
+              {canEdit ? "Drag onto a truck — or tap, then tap the truck." : "Unassigned and available today."}
             </div>
             <div className="flex max-h-[320px] flex-col gap-1.5 overflow-y-auto">
               {spares.slice(0, 80).map((d) => (
-                <DriverChip key={d.id} driver={d} draggable={canEdit} onDragStart={() => setDrag({ from: "pool", driverId: d.id })} />
+                <DriverChip
+                  key={d.id}
+                  driver={d}
+                  draggable={canEdit}
+                  onDragStart={() => setDrag(d.id)}
+                  onPick={canEdit ? () => pick(d.id) : undefined}
+                  picked={picked === d.id}
+                />
               ))}
               {spares.length === 0 && <div className="text-xs text-slate-400">Everyone is rostered.</div>}
             </div>
@@ -319,6 +512,80 @@ export function FleetBoard({
           </div>
         </aside>
       </div>
+
+      {/* Bulk status bar — shows while trucks are ticked. */}
+      {selected.size > 0 && !pickedDriver && (
+        <div className="print-hide fixed bottom-5 left-1/2 z-40 -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-full border border-brand-mid bg-white py-2 pl-4 pr-2 shadow-lg">
+            <span className="whitespace-nowrap text-sm text-slate-600">
+              <b className="text-brand-deep">{selected.size}</b> truck{selected.size === 1 ? "" : "s"} →
+            </span>
+            <select
+              value={bulkStatus}
+              onChange={(e) => setBulkStatus(e.target.value)}
+              className="rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs font-bold text-slate-700"
+              title="Status to apply to every ticked truck"
+            >
+              {STATUS_CODES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            {bulkStatus in TIMED_STATUS && (
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={8}
+                placeholder="e.g. 1430"
+                value={bulkTime}
+                onChange={(e) => setBulkTime(e.target.value)}
+                title={`${TIMED_STATUS[bulkStatus]} — 24-hour, type 1430 or 14:30`}
+                className="w-20 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs font-semibold tabular-nums text-amber-800"
+              />
+            )}
+            <button
+              onClick={() =>
+                go(async () => {
+                  // 24-hour text — normalise before it ships ("1430" → "14:30").
+                  const clean = bulkTime.trim() && bulkStatus in TIMED_STATUS ? parseTimeEntry(bulkTime) : "";
+                  if (clean === null) return { ok: false, error: "Can't read that time — type 24-hour, like 1430 or 14:30." };
+                  const res = await setTruckStatusBulk(date, [...selected], bulkStatus, clean);
+                  if (res.ok) setSelected(new Set());
+                  return res;
+                })
+              }
+              disabled={pending}
+              className="rounded-full bg-brand-mid px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-deep disabled:opacity-50"
+            >
+              Apply
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tap-to-place bar — shows while a driver is picked up. */}
+      {pickedDriver && (
+        <div className="print-hide fixed bottom-5 left-1/2 z-40 -translate-x-1/2">
+          <div className="flex items-center gap-3 rounded-full border border-brand-mid bg-white py-2 pl-4 pr-2 shadow-lg">
+            <span className="whitespace-nowrap text-sm text-slate-600">
+              Moving <b className="text-brand-deep">{pickedDriver.name}</b> — tap a truck to place
+            </span>
+            <button
+              onClick={() => setPicked(null)}
+              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

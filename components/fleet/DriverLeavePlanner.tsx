@@ -8,61 +8,9 @@ import { PickerField } from "./DatePicker";
 import { Kpi } from "./Kpi";
 import { useToast } from "@/components/Toast";
 import { addDriverLeave, removeDriverLeave } from "@/app/(app)/fleet/leave/actions";
+import { daysInMonth, splitRange, countDays, shiftMonth } from "@/lib/wfm/leave";
 
-const pad = (n: number) => String(n).padStart(2, "0");
 const WD = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-
-function daysInMonth(ym: string) {
-  const [y, m] = ym.split("-").map(Number);
-  const dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const todayIso = new Date().toLocaleDateString("en-CA", { timeZone: "Australia/Sydney" });
-  return Array.from({ length: dim }, (_, i) => {
-    const iso = `${ym}-${pad(i + 1)}`;
-    const dow = new Date(Date.UTC(y, m - 1, i + 1)).getUTCDay();
-    return { iso, num: i + 1, dow, isWeekend: dow === 0 || dow === 6, isToday: iso === todayIso };
-  });
-}
-
-/** Split [from,to] into contiguous working-day runs (Sun excluded; Sat unless included). */
-function splitRange(from: string, to: string, includeSat: boolean): { start: string; end: string }[] {
-  const a = new Date(`${from}T00:00:00Z`).getTime();
-  const b = new Date(`${to || from}T00:00:00Z`).getTime();
-  if (Number.isNaN(a) || Number.isNaN(b)) return [];
-  const lo = Math.min(a, b);
-  const hi = Math.max(a, b);
-  const out: { start: string; end: string }[] = [];
-  let runStart: string | null = null;
-  let prev: string | null = null;
-  for (let t = lo; t <= hi; t += 86_400_000) {
-    const d = new Date(t);
-    const dow = d.getUTCDay();
-    const iso = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-    const include = dow !== 0 && (includeSat || dow !== 6);
-    if (include) {
-      if (runStart === null) runStart = iso;
-      prev = iso;
-    } else if (runStart !== null) {
-      out.push({ start: runStart, end: prev! });
-      runStart = null;
-    }
-  }
-  if (runStart !== null) out.push({ start: runStart, end: prev! });
-  return out;
-}
-
-function countDays(from: string, to: string, includeSat: boolean) {
-  return splitRange(from, to, includeSat).reduce((acc, seg) => {
-    const a = new Date(`${seg.start}T00:00:00Z`).getTime();
-    const b = new Date(`${seg.end}T00:00:00Z`).getTime();
-    return acc + Math.round((b - a) / 86_400_000) + 1;
-  }, 0);
-}
-
-function shiftMonth(ym: string, delta: number) {
-  const [y, m] = ym.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1 + delta, 1));
-  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}`;
-}
 
 type Picker = { driverId: number; label: string; dayKey: string; existingId?: number; code?: string; x: number; y: number };
 type Balances = Record<number, { entitled: number; taken: number }>;

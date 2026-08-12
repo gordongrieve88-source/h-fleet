@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { isEditRole } from "@/lib/auth/roles";
-import { referenceRepo } from "@/lib/db/repositories";
+import { isManagerRole } from "@/lib/auth/roles";
+import { referenceRepo, complianceRepo, fleetRepo } from "@/lib/db/repositories";
 import { PageHeader, Card } from "@/components/PageHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { StatesPicker } from "@/components/StatesPicker";
@@ -10,22 +10,51 @@ import {
   createLeaveTypeAction,
   updateLeaveTypeAction,
   toggleLeaveTypeActive,
+  createCredentialTypeAction,
+  updateCredentialTypeAction,
+  toggleCredentialTypeActive,
+  deleteCredentialTypeAction,
   createHolidayAction,
   deleteHolidayAction,
+  createDispatchGroupAction,
+  updateDispatchGroupAction,
+  toggleDispatchGroupActive,
+  deleteDispatchGroupAction,
+  createTruckPropertyAction,
+  updateTruckPropertyAction,
+  toggleTruckPropertyActive,
+  deleteTruckPropertyAction,
+  createProfileFieldAction,
+  updateProfileFieldAction,
+  toggleProfileFieldActive,
+  deleteProfileFieldAction,
 } from "./actions";
 
 const inputCls =
   "rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 focus:border-brand-mid focus:outline-none focus:ring-1 focus:ring-brand-mid";
 const saveBtn = "rounded-lg bg-brand-mid px-3 py-1 text-xs font-semibold text-white hover:bg-brand-deep";
+const STATES = ["NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"];
 
 export default async function SetupPage() {
   const user = await getCurrentUser();
-  if (!isEditRole(user?.role)) redirect("/fleet");
+  if (!isManagerRole(user?.role)) redirect("/fleet");
 
-  const [leaveTypes, holidays] = await Promise.all([
+  const [leaveTypes, holidays, credentialTypes, truckTypes, groups, truckProperties, profileFields] = await Promise.all([
     referenceRepo.listAllLeaveTypes(),
     referenceRepo.listAllHolidays(),
+    complianceRepo.listAllTypes(),
+    complianceRepo.truckTypes(),
+    fleetRepo.listAllDispatchGroups(),
+    fleetRepo.listAllTruckProperties(),
+    fleetRepo.listAllProfileFields(),
   ]);
+  const profileSections = [...new Set(profileFields.map((f) => f.section))];
+  // Inductions are credential types under the hood (kind TICKBOX, category
+  // "Inductions") but they get their own simple card — burying 20+ of them
+  // among the dated-ticket machinery made both unreadable.
+  const inductions = credentialTypes.filter((c) => c.category === "Inductions");
+  const otherCredentialTypes = credentialTypes.filter((c) => c.category !== "Inductions");
+  const categories = [...new Set(otherCredentialTypes.map((c) => c.category))];
   const todayKey = ymd(todayUTC());
   const upcomingHolidays = holidays.filter((h) => h.date >= todayKey);
 
@@ -33,8 +62,87 @@ export default async function SetupPage() {
     <div className="space-y-4">
       <PageHeader
         title="Setup"
-        description="Leave types and public holidays. Changes here flow straight through to the board, planner and reports — nothing is hardcoded."
+        description="Dispatch groups, leave types, credentials and public holidays. Changes here flow straight through to the board, planner and reports — nothing is hardcoded."
       />
+
+      {/* Dispatch groups */}
+      <Card title="Dispatch groups" count={groups.length}>
+        <ul className="divide-y divide-slate-50">
+          {groups.map((g) => (
+            <li key={g.code} className={`px-4 py-1.5 ${g.isActive ? "" : "opacity-50"}`}>
+              <form action={updateDispatchGroupAction} className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="hidden" name="code" value={g.code} />
+                <span className="w-12 font-mono font-semibold text-brand-mid">{g.code}</span>
+                <input name="name" defaultValue={g.name} className={`${inputCls} min-w-48 flex-1`} />
+                <select name="state" defaultValue={g.state} className={inputCls} title="Where the group operates">
+                  {STATES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <input name="sortOrder" type="number" defaultValue={g.sortOrder} className={`${inputCls} w-16`} title="Sort order" />
+                <SubmitButton className={saveBtn} savedToast={`${g.code} saved`}>
+                  Save
+                </SubmitButton>
+              </form>
+              <div className="mt-0.5 flex items-center gap-3">
+                <form action={toggleDispatchGroupActive}>
+                  <input type="hidden" name="code" value={g.code} />
+                  <input type="hidden" name="active" value={g.isActive ? "false" : "true"} />
+                  <SubmitButton
+                    className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    savedToast={g.isActive ? `${g.code} hidden — depots keep their group` : `${g.code} reactivated`}
+                  >
+                    {g.isActive ? "Hide" : "Reactivate"}
+                  </SubmitButton>
+                </form>
+                {g._count.depots === 0 ? (
+                  <form action={deleteDispatchGroupAction}>
+                    <input type="hidden" name="code" value={g.code} />
+                    <SubmitButton
+                      className="text-[11px] text-rose-600 hover:underline"
+                      savedToast={`${g.code} removed`}
+                      confirmMessage={`Remove dispatch group ${g.code} (${g.name})? No depots use it, so nothing else is affected.`}
+                    >
+                      Remove
+                    </SubmitButton>
+                  </form>
+                ) : (
+                  <span className="text-[11px] text-slate-300" title="Move its depots to another group before removing it">
+                    in use — can&apos;t remove
+                  </span>
+                )}
+                <span className="text-[11px] text-slate-400">
+                  {g._count.depots > 0 ? `${g._count.depots} depot${g._count.depots === 1 ? "" : "s"}` : "no depots yet"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <form action={createDispatchGroupAction} className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          ＋ Add group
+          <input name="code" placeholder="e.g. 305" className={`${inputCls} w-24 font-mono`} />
+          <input name="name" placeholder="Display name, e.g. TAS Conc" className={`${inputCls} min-w-48 flex-1`} />
+          <select name="state" defaultValue="NSW" className={inputCls}>
+            {STATES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <input name="sortOrder" type="number" defaultValue={50} className={`${inputCls} w-16`} />
+          <SubmitButton className={saveBtn} savedToast="Dispatch group added">
+            Add
+          </SubmitButton>
+        </form>
+        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+          The allocation system&apos;s grouping, and what the view selector in the top bar switches between. Assign depots
+          to a group on <b>Fleet → Depots</b>; a group with no depots stays out of the selector until it has some. The code
+          is the identity Syncrotess prints, so it can&apos;t be edited — add the right one and move the depots across.
+          Hiding a group keeps its depots attached; removing one is only offered while nothing uses it.
+        </p>
+      </Card>
 
       {/* Leave types */}
       <Card title="Leave types" count={leaveTypes.length}>
@@ -73,6 +181,352 @@ export default async function SetupPage() {
             Add
           </SubmitButton>
         </form>
+      </Card>
+
+      {/* Driver inductions — simple tick boxes, one row each. Hidden inputs pin
+          the credential-type fields that don't apply to an induction. */}
+      <Card title="Driver inductions" count={inductions.length}>
+        <ul className="max-h-96 divide-y divide-slate-50 overflow-y-auto">
+          {inductions.map((ind) => (
+            <li key={ind.code} className={`px-4 py-1.5 ${ind.isActive ? "" : "opacity-50"}`}>
+              <form action={updateCredentialTypeAction} className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="hidden" name="code" value={ind.code} />
+                <input type="hidden" name="kind" value="TICKBOX" />
+                <input type="hidden" name="category" value="Inductions" />
+                <input type="hidden" name="states" value={ind.states} />
+                <input type="hidden" name="severity" value={ind.severity} />
+                <input type="hidden" name="warnDays" value={ind.warnDays} />
+                <input type="hidden" name="requiredForTruckType" value={ind.requiredForTruckType ?? ""} />
+                <span className="w-40 truncate font-mono text-[12px] font-semibold text-brand-mid" title={ind.code}>
+                  {ind.code}
+                </span>
+                <input name="name" defaultValue={ind.name} className={`${inputCls} min-w-48 flex-1`} />
+                <input name="sortOrder" type="number" defaultValue={ind.sortOrder} className={`${inputCls} w-16`} title="Sort order" />
+                <SubmitButton className={saveBtn} savedToast={`${ind.code} saved`}>
+                  Save
+                </SubmitButton>
+              </form>
+              <div className="mt-0.5 flex items-center gap-3">
+                <form action={toggleCredentialTypeActive}>
+                  <input type="hidden" name="code" value={ind.code} />
+                  <input type="hidden" name="active" value={ind.isActive ? "false" : "true"} />
+                  <SubmitButton
+                    className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    savedToast={ind.isActive ? `${ind.code} hidden — inducted drivers keep it` : `${ind.code} reactivated`}
+                  >
+                    {ind.isActive ? "Hide" : "Reactivate"}
+                  </SubmitButton>
+                </form>
+                <form action={deleteCredentialTypeAction}>
+                  <input type="hidden" name="code" value={ind.code} />
+                  <SubmitButton
+                    className="text-[11px] text-rose-600 hover:underline"
+                    savedToast={`${ind.code} removed`}
+                    confirmMessage={
+                      ind._count.credentials > 0
+                        ? `Remove "${ind.name}" entirely?\n\n${ind._count.credentials} driver${ind._count.credentials === 1 ? "" : "s"} hold it and their tick will be deleted with it. This can't be undone — use Hide instead to retire it and keep the history.`
+                        : `Remove "${ind.name}"? No drivers hold it, so nothing else is affected.`
+                    }
+                  >
+                    Remove
+                  </SubmitButton>
+                </form>
+                <span className="text-[11px] text-slate-300">
+                  {ind._count.credentials > 0 ? `${ind._count.credentials} driver${ind._count.credentials === 1 ? "" : "s"}` : "unused"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <form action={createCredentialTypeAction} className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          ＋ Add induction
+          <input type="hidden" name="kind" value="TICKBOX" />
+          <input type="hidden" name="category" value="Inductions" />
+          <input type="hidden" name="states" value="ALL" />
+          <input type="hidden" name="severity" value="WARN" />
+          <input type="hidden" name="warnDays" value="0" />
+          <input type="hidden" name="requiredForTruckType" value="" />
+          <input name="code" placeholder="CODE" className={`${inputCls} w-40 font-mono uppercase`} />
+          <input name="name" placeholder="Display name" className={`${inputCls} min-w-48 flex-1`} />
+          <input name="sortOrder" type="number" defaultValue={50} className={`${inputCls} w-16`} />
+          <SubmitButton className={saveBtn} savedToast="Induction added">
+            Add
+          </SubmitButton>
+        </form>
+        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+          The tick boxes under each driver&apos;s setup on <b>Fleet → Drivers</b> — the allocation system&apos;s induction
+          list. INDUCTION1–19 are its generic slots: rename one as a real site claims it (the code is the allocation
+          system&apos;s identity and stays put). Hiding an induction takes it off the menu but keeps it ticked where it
+          already is. Dated tickets and gated competencies live in the card below.
+        </p>
+      </Card>
+
+      {/* Driver credential types */}
+      <Card title="Driver credentials & competencies" count={otherCredentialTypes.length}>
+        <ul className="divide-y divide-slate-50">
+          {otherCredentialTypes.length === 0 && (
+            <li className="px-4 py-3 text-xs text-slate-400">
+              None yet — this card is for dated tickets (licences, medicals) and competencies that gate a truck type.
+              Simple site inductions belong in the card above.
+            </li>
+          )}
+          {otherCredentialTypes.map((ct) => (
+            <li key={ct.code} className={`px-4 py-1.5 ${ct.isActive ? "" : "opacity-50"}`}>
+              <form action={updateCredentialTypeAction} className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="hidden" name="code" value={ct.code} />
+                <span className="w-16 font-semibold text-slate-600">{ct.code}</span>
+                <input name="name" defaultValue={ct.name} className={`${inputCls} min-w-48 flex-1`} />
+                <select name="kind" defaultValue={ct.kind} className={inputCls} title="Dated ticket, or a tick box they either hold or don't">
+                  <option value="EXPIRY">Dated ticket</option>
+                  <option value="TICKBOX">Tick box</option>
+                </select>
+                <input name="category" defaultValue={ct.category} list="cred-categories" className={`${inputCls} w-36`} title="Grouping on the driver profile" />
+                <StatesPicker name="states" defaultValue={ct.states} />
+                <select name="requiredForTruckType" defaultValue={ct.requiredForTruckType ?? ""} className={inputCls} title="Tick boxes only: required to drive this truck type">
+                  <option value="">Any truck</option>
+                  {truckTypes.map((t) => (
+                    <option key={t} value={t}>
+                      Needed for {t}
+                    </option>
+                  ))}
+                </select>
+                <select name="severity" defaultValue={ct.severity} className={inputCls} title="What an expired ticket does">
+                  <option value="WARN">Warn only</option>
+                  <option value="BLOCK">Block rostering</option>
+                </select>
+                <label className="flex items-center gap-1 text-xs text-slate-500">
+                  warn
+                  <input name="warnDays" type="number" defaultValue={ct.warnDays} className={`${inputCls} w-16`} title="Expiring-soon window (days)" />
+                  d
+                </label>
+                <input name="sortOrder" type="number" defaultValue={ct.sortOrder} className={`${inputCls} w-14`} title="Sort order" />
+                <SubmitButton className={saveBtn} savedToast={`${ct.code} saved`}>
+                  Save
+                </SubmitButton>
+              </form>
+              <div className="mt-0.5 flex items-center gap-3">
+                <form action={toggleCredentialTypeActive}>
+                  <input type="hidden" name="code" value={ct.code} />
+                  <input type="hidden" name="active" value={ct.isActive ? "false" : "true"} />
+                  <SubmitButton
+                    className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    savedToast={ct.isActive ? `${ct.code} hidden — records kept` : `${ct.code} reactivated`}
+                  >
+                    {ct.isActive ? "Hide" : "Reactivate"}
+                  </SubmitButton>
+                </form>
+                <form action={deleteCredentialTypeAction}>
+                  <input type="hidden" name="code" value={ct.code} />
+                  <SubmitButton
+                    className="text-[11px] text-rose-600 hover:underline"
+                    savedToast={`${ct.code} removed`}
+                    confirmMessage={
+                      ct._count.credentials > 0
+                        ? `Remove "${ct.name}" entirely?\n\n${ct._count.credentials} driver record${ct._count.credentials === 1 ? "" : "s"} will be deleted with it. This can't be undone — use Hide instead to retire it and keep the history.`
+                        : `Remove "${ct.name}"? No drivers hold it, so nothing else is affected.`
+                    }
+                  >
+                    Remove
+                  </SubmitButton>
+                </form>
+                <span className="text-[11px] text-slate-300">
+                  {ct._count.credentials > 0
+                    ? `${ct._count.credentials} driver${ct._count.credentials === 1 ? "" : "s"}`
+                    : "unused"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <datalist id="cred-categories">
+          {categories.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <form action={createCredentialTypeAction} className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          ＋ Add
+          <input name="code" placeholder="CODE" className={`${inputCls} w-20 uppercase`} />
+          <input name="name" placeholder="Display name" className={`${inputCls} min-w-48 flex-1`} />
+          <select name="kind" defaultValue="TICKBOX" className={inputCls}>
+            <option value="TICKBOX">Tick box</option>
+            <option value="EXPIRY">Dated ticket</option>
+          </select>
+          <input name="category" placeholder="Group, e.g. Mixes" list="cred-categories" className={`${inputCls} w-36`} />
+          <StatesPicker name="states" />
+          <select name="requiredForTruckType" defaultValue="" className={inputCls}>
+            <option value="">Any truck</option>
+            {truckTypes.map((t) => (
+              <option key={t} value={t}>
+                Needed for {t}
+              </option>
+            ))}
+          </select>
+          <select name="severity" defaultValue="WARN" className={inputCls}>
+            <option value="WARN">Warn only</option>
+            <option value="BLOCK">Block rostering</option>
+          </select>
+          <input name="warnDays" type="number" defaultValue={30} className={`${inputCls} w-16`} title="Expiring-soon window (days)" />
+          <input name="sortOrder" type="number" defaultValue={50} className={`${inputCls} w-14`} />
+          <SubmitButton className={saveBtn} savedToast="Added">
+            Add
+          </SubmitButton>
+        </form>
+        <div className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+          <p className="mb-1">
+            <b>Tick box</b> — a competency a driver either holds or doesn&apos;t: trained on a mix, signed off on a truck
+            type, inducted to a site. Ticked on the driver&apos;s own profile. <b>Dated ticket</b> — a licence or medical
+            with an expiry, maintained on the Compliance screen.
+          </p>
+          <p>
+            Set <b>Needed for &lt;truck type&gt;</b> on a tick box and a driver who doesn&apos;t hold it can&apos;t be
+            rostered onto that kind of truck. An expired <b>Block rostering</b> ticket does the same. Everything else
+            flags in the Fleet doctor.
+          </p>
+        </div>
+      </Card>
+
+      {/* Driver profile fields — the onboarding checklist */}
+      <Card title="Driver profile fields" count={profileFields.length}>
+        <ul className="max-h-96 divide-y divide-slate-50 overflow-y-auto">
+          {profileFields.map((f) => (
+            <li key={f.code} className={`px-4 py-1.5 ${f.isActive ? "" : "opacity-50"}`}>
+              <form action={updateProfileFieldAction} className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="hidden" name="code" value={f.code} />
+                <span className="w-40 truncate font-mono text-[12px] font-semibold text-brand-mid" title={f.code}>
+                  {f.code}
+                </span>
+                <input name="label" defaultValue={f.label} className={`${inputCls} min-w-48 flex-1`} />
+                <input name="section" defaultValue={f.section} list="profile-sections" className={`${inputCls} w-44`} title="Card the field appears under on the profile" />
+                <select name="kind" defaultValue={f.kind} className={inputCls} title="What the input is">
+                  <option value="TEXT">Text</option>
+                  <option value="DATE">Date</option>
+                  <option value="YESNO">Tick box</option>
+                </select>
+                <input name="sortOrder" type="number" defaultValue={f.sortOrder} className={`${inputCls} w-16`} title="Sort order" />
+                <SubmitButton className={saveBtn} savedToast={`${f.code} saved`}>
+                  Save
+                </SubmitButton>
+              </form>
+              <div className="mt-0.5 flex items-center gap-3">
+                <form action={toggleProfileFieldActive}>
+                  <input type="hidden" name="code" value={f.code} />
+                  <input type="hidden" name="active" value={f.isActive ? "false" : "true"} />
+                  <SubmitButton
+                    className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    savedToast={f.isActive ? `${f.code} hidden — existing answers stay visible` : `${f.code} reactivated`}
+                  >
+                    {f.isActive ? "Hide" : "Reactivate"}
+                  </SubmitButton>
+                </form>
+                <form action={deleteProfileFieldAction}>
+                  <input type="hidden" name="code" value={f.code} />
+                  <SubmitButton
+                    className="text-[11px] text-rose-600 hover:underline"
+                    savedToast={`${f.code} removed`}
+                    confirmMessage={
+                      f._count.values > 0
+                        ? `Remove "${f.label}" entirely?\n\n${f._count.values} driver answer${f._count.values === 1 ? "" : "s"} will be deleted with it. This can't be undone — use Hide instead to retire the field and keep what's on file.`
+                        : `Remove "${f.label}"? No drivers have it filled in, so nothing else is affected.`
+                    }
+                  >
+                    Remove
+                  </SubmitButton>
+                </form>
+                <span className="text-[11px] text-slate-300">
+                  {f._count.values > 0 ? `${f._count.values} driver${f._count.values === 1 ? "" : "s"}` : "unused"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <datalist id="profile-sections">
+          {profileSections.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+        <form action={createProfileFieldAction} className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          ＋ Add field
+          <input name="code" placeholder="CODE" className={`${inputCls} w-40 font-mono uppercase`} />
+          <input name="label" placeholder="Label" className={`${inputCls} min-w-48 flex-1`} />
+          <input name="section" placeholder="Section" list="profile-sections" className={`${inputCls} w-44`} />
+          <select name="kind" defaultValue="TEXT" className={inputCls}>
+            <option value="TEXT">Text</option>
+            <option value="DATE">Date</option>
+            <option value="YESNO">Tick box</option>
+          </select>
+          <SubmitButton className={saveBtn} savedToast="Profile field added">
+            Add
+          </SubmitButton>
+        </form>
+        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+          The onboarding checklist — every field here appears on each driver&apos;s profile (click a driver&apos;s name on{" "}
+          <b>Fleet → Drivers</b>), grouped by section. Straight from the &ldquo;Onboarding Checklist&rdquo; workbook, minus
+          the columns the app already owns (name, number, depot, work group). Hiding a field takes it off profiles but
+          keeps existing answers visible on drivers that have one.
+        </p>
+      </Card>
+
+      {/* Truck properties */}
+      <Card title="Truck properties" count={truckProperties.length}>
+        <ul className="max-h-96 divide-y divide-slate-50 overflow-y-auto">
+          {truckProperties.map((p) => (
+            <li key={p.code} className={`px-4 py-1.5 ${p.isActive ? "" : "opacity-50"}`}>
+              <form action={updateTruckPropertyAction} className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="hidden" name="code" value={p.code} />
+                <span className="w-40 truncate font-mono text-[12px] font-semibold text-brand-mid" title={p.code}>
+                  {p.code}
+                </span>
+                <input name="name" defaultValue={p.name} className={`${inputCls} min-w-48 flex-1`} />
+                <input name="sortOrder" type="number" defaultValue={p.sortOrder} className={`${inputCls} w-16`} title="Sort order" />
+                <SubmitButton className={saveBtn} savedToast={`${p.code} saved`}>
+                  Save
+                </SubmitButton>
+              </form>
+              <div className="mt-0.5 flex items-center gap-3">
+                <form action={toggleTruckPropertyActive}>
+                  <input type="hidden" name="code" value={p.code} />
+                  <input type="hidden" name="active" value={p.isActive ? "false" : "true"} />
+                  <SubmitButton
+                    className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    savedToast={p.isActive ? `${p.code} hidden — ticked trucks keep it` : `${p.code} reactivated`}
+                  >
+                    {p.isActive ? "Hide" : "Reactivate"}
+                  </SubmitButton>
+                </form>
+                <form action={deleteTruckPropertyAction}>
+                  <input type="hidden" name="code" value={p.code} />
+                  <SubmitButton
+                    className="text-[11px] text-rose-600 hover:underline"
+                    savedToast={`${p.code} removed`}
+                    confirmMessage={
+                      p._count.trucks > 0
+                        ? `Remove "${p.name}" entirely?\n\nIts tick on ${p._count.trucks} truck${p._count.trucks === 1 ? "" : "s"} will be deleted with it. This can't be undone — use Hide instead to retire it and keep the ticks.`
+                        : `Remove "${p.name}"? No trucks carry it, so nothing else is affected.`
+                    }
+                  >
+                    Remove
+                  </SubmitButton>
+                </form>
+                <span className="text-[11px] text-slate-300">
+                  {p._count.trucks > 0 ? `${p._count.trucks} truck${p._count.trucks === 1 ? "" : "s"}` : "unused"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <form action={createTruckPropertyAction} className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          ＋ Add property
+          <input name="code" placeholder="CODE" className={`${inputCls} w-40 font-mono uppercase`} />
+          <input name="name" placeholder="Display name" className={`${inputCls} min-w-48 flex-1`} />
+          <SubmitButton className={saveBtn} savedToast="Truck property added">
+            Add
+          </SubmitButton>
+        </form>
+        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+          The tick boxes under each truck&apos;s setup on <b>Fleet → Trucks</b> — the allocation system&apos;s attribute
+          list. The code is what the allocation system prints, so it can&apos;t be edited after the fact. Hiding a
+          property takes it off the menu but keeps it ticked where it already is.
+        </p>
       </Card>
 
       {/* Public holidays */}

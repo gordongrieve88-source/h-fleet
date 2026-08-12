@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { isEditRole } from "@/lib/auth/roles";
+import { isManagerRole } from "@/lib/auth/roles";
 import { fleetRepo } from "@/lib/db/repositories";
+import { getViewGroup } from "@/lib/fleet/view-group";
 import { PageHeader } from "@/components/PageHeader";
 import { DepotsAdmin } from "@/components/fleet/DepotsAdmin";
 
@@ -9,9 +10,14 @@ export const dynamic = "force-dynamic";
 
 export default async function FleetDepotsPage() {
   const user = await getCurrentUser();
-  if (!isEditRole(user?.role)) redirect("/fleet");
+  if (!isManagerRole(user?.role)) redirect("/fleet");
 
-  const [depots, regions] = await Promise.all([fleetRepo.listAllDepots(), fleetRepo.listAllRegions()]);
+  const group = await getViewGroup();
+  const [depots, regions, groups] = await Promise.all([
+    fleetRepo.listAllDepots(group),
+    fleetRepo.listAllRegions(),
+    fleetRepo.listAllDispatchGroups(),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -24,11 +30,15 @@ export default async function FleetDepotsPage() {
           id: d.id,
           name: d.name,
           region: d.regionName,
+          state: d.state,
+          groupCode: d.dispatchGroupCode,
           isActive: d.isActive,
           drivers: d._count.drivers,
           trucks: d._count.trucks,
         }))}
-        regions={regions.map((r) => ({ name: r.name, isActive: r.isActive, depots: r._count.depots }))}
+        regions={regions.map((r) => ({ name: r.name, groupCode: r.dispatchGroupCode, isActive: r.isActive, depots: r._count.depots }))}
+        groups={groups.map((g) => ({ code: g.code, name: g.name, state: g.state, isActive: g.isActive }))}
+        currentGroup={group}
       />
     </div>
   );
