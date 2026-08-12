@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { fleetBoardRepo, driverLeaveRepo, referenceRepo, fleetRepo } from "@/lib/db/repositories";
 import { todayUTC, ymd } from "@/lib/wfm/date";
 import { availFor, isOnRoad } from "@/lib/wfm/fleet";
@@ -81,7 +82,7 @@ export default async function FleetWallboardPage() {
     <div className="flex min-h-screen flex-col bg-brand-deep px-6 py-5 text-white sm:px-10 sm:py-7">
       <header className="flex flex-wrap items-center justify-between gap-6">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="" className="h-10 w-10" />
+                    <Image src="/logo.png" alt="" width={40} height={40} className="h-10 w-10" />
           <div className="leading-tight">
             <div className="font-heading text-2xl font-semibold">
               H-<span className="text-brand-bright">Fleet</span> · today
