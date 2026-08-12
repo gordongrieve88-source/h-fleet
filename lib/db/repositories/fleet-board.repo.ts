@@ -140,6 +140,11 @@ export const fleetBoardRepo = {
     return rows;
   },
 
+  /** One saved row (null when the day or truck isn't saved). */
+  getAssignment(date: Date, truckId: string) {
+    return prisma.truckAssignment.findUnique({ where: { date_truckId: { date, truckId } } });
+  },
+
   /** True once a date has saved rows. */
   async isMaterialised(date: Date): Promise<boolean> {
     return (await prisma.truckAssignment.count({ where: { date } })) > 0;

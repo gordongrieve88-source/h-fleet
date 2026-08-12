@@ -200,8 +200,22 @@ export async function setTruckStatusTime(dateKey: string, truckId: string, statu
       null,
       clean ? `${truckId} planned time ${clean} on ${fmtDate(date)}` : `${truckId} planned time cleared on ${fmtDate(date)}`,
     );
+    // Carry the status so the allocators' inbox can merge this with the
+    // status change it belongs to — one row, "ON-EF — Early finish at 14:30",
+    // not a pair of rows to action separately.
+    const row = await fleetBoardRepo.getAssignment(date, truckId);
+    const status = row?.status?.toUpperCase() ?? "";
     await pushRosterChanges(dateKey, [
-      { truck: truckId, summary: clean ? `Planned time ${clean}` : "Planned time cleared", time: clean || undefined },
+      {
+        truck: truckId,
+        summary: clean
+          ? status in TIMED_STATUS
+            ? `${status} — ${statusLabel(status)} at ${clean}`
+            : `Planned time ${clean}`
+          : "Planned time cleared",
+        status: status || undefined,
+        time: clean || undefined,
+      },
     ]);
     refresh();
     return { ok: true };
