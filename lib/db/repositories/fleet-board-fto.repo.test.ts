@@ -12,7 +12,6 @@ import { dateFromKey } from "@/lib/wfm/date";
  */
 const MON = dateFromKey("2026-08-03");
 const TUE = dateFromKey("2026-08-04");
-const WED = dateFromKey("2026-08-05");
 const FRI = dateFromKey("2026-08-07");
 
 beforeAll(() => applyMigrations());
