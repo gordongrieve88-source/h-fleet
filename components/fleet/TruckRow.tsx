@@ -118,9 +118,11 @@ export function TruckRow({
   // Switching windows must never lose a typed time — flush the draft the
   // moment the tab goes hidden (background timers can be frozen).
   const flushRef = useRef<() => void>(() => {});
-  flushRef.current = () => {
-    if (timeDraft != null && timeDraft !== (row.statusTime ?? "")) commitTime(timeDraft);
-  };
+  useEffect(() => {
+    flushRef.current = () => {
+      if (timeDraft != null && timeDraft !== (row.statusTime ?? "")) commitTime(timeDraft);
+    };
+  });
   useEffect(() => {
     const onHide = () => {
       if (document.hidden) flushRef.current();
