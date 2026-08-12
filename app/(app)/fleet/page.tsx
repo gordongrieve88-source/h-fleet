@@ -3,7 +3,7 @@ import { fleetBoardRepo, driverLeaveRepo, referenceRepo, complianceRepo, integra
 import { loadFleetCatalog } from "@/lib/fleet/catalog";
 import { getViewGroup } from "@/lib/fleet/view-group";
 import { prisma } from "@/lib/db/client";
-import { isOnRoad } from "@/lib/wfm/fleet";
+import { isOnRoad, TIMED_STATUS } from "@/lib/wfm/fleet";
 import { addDaysUTC, fmtDate, parseYmdOrNull, todayUTC, ymd } from "@/lib/wfm/date";
 import {
   credentialState,
@@ -85,6 +85,12 @@ export default async function FleetBoardPage({ searchParams }: { searchParams: P
   const attention = rows.filter((r) => ["ON-SER", "ON-DED"].includes(r.status.toUpperCase()));
   if (attention.length > 0) {
     doctor.push({ kind: "warn", label: "Needs service / dedag", items: attention.map((r) => `${r.truck} · ${r.status}`) });
+  }
+  // A late start / early finish / service / dedag without its planned time is
+  // a plan nobody can act on — and the allocators never hear the time.
+  const missingTimes = rows.filter((r) => r.status.toUpperCase() in TIMED_STATUS && !r.statusTime);
+  if (missingTimes.length > 0) {
+    doctor.push({ kind: "warn", label: "Timed status, no time", items: missingTimes.map((r) => `${r.truck} · ${r.status}`) });
   }
 
   // ---- Compliance: credentials + fatigue runs for today's rostered drivers ----

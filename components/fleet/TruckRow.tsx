@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { TruckAssignmentVM, DriverVM } from "@/lib/fleet/catalog";
 import { TRUCK_STATUS, TIMED_STATUS, statusKind, isOnRoad } from "@/lib/wfm/fleet";
 import { startVarianceMinutes } from "@/lib/wfm/analytics";
@@ -99,7 +99,8 @@ export function TruckRow({
   acks: { summary: string; by: string; at: string }[];
 }) {
   const [over, setOver] = useState(false);
-  const statusTimeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The time field's segments are half-filled (no value to save yet).
+  const [badTime, setBadTime] = useState(false);
   const kind = statusKind(row.status);
   const needsCover = !driver && row.status.toUpperCase() === "OFF-ND";
   const timedLabel = TIMED_STATUS[row.status.toUpperCase()] ?? null;
@@ -245,26 +246,40 @@ export function TruckRow({
             ))}
           </select>
           {timedLabel && (
-            <input
-              type="time"
-              defaultValue={row.statusTime ?? ""}
-              title={timedLabel}
-              // Save as soon as a complete time exists — waiting for blur lost
-              // the time whenever the dispatcher typed it and switched away.
-              // Short debounce so hour-then-minute edits land as one save.
-              onChange={(e) => {
-                const v = e.target.value;
-                if (statusTimeTimer.current) clearTimeout(statusTimeTimer.current);
-                statusTimeTimer.current = setTimeout(() => {
-                  if (v !== (row.statusTime ?? "")) onStatusTime(v);
-                }, 800);
-              }}
-              onBlur={(e) => {
-                if (statusTimeTimer.current) clearTimeout(statusTimeTimer.current);
-                if (e.target.value !== (row.statusTime ?? "")) onStatusTime(e.target.value);
-              }}
-              className="w-[92px] rounded-md border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10.5px] font-semibold tabular-nums text-amber-800 focus:border-brand-mid focus:outline-none"
-            />
+            <>
+              <input
+                type="time"
+                defaultValue={row.statusTime ?? ""}
+                title={
+                  row.statusTime
+                    ? timedLabel
+                    : `${timedLabel} — nothing saved yet (red until the time lands). In 12-hour mode the AM/PM must be filled in too.`
+                }
+                // Save the instant the field holds a complete time — a delayed
+                // timer can freeze with a backgrounded tab and silently lose
+                // the entry. A half-filled field (typically a morning time
+                // missing its AM) has NO value at all, so it gets called out.
+                onChange={(e) => {
+                  setBadTime(e.target.validity.badInput);
+                  const v = e.target.value;
+                  if (v && v !== (row.statusTime ?? "")) onStatusTime(v);
+                }}
+                onBlur={(e) => {
+                  setBadTime(e.target.validity.badInput);
+                  if (e.target.value !== (row.statusTime ?? "")) onStatusTime(e.target.value);
+                }}
+                className={`w-[92px] rounded-md border px-1 py-0.5 text-[10.5px] font-semibold tabular-nums focus:outline-none ${
+                  row.statusTime
+                    ? "border-amber-300 bg-amber-50 text-amber-800 focus:border-brand-mid"
+                    : "border-rose-400 bg-rose-50 text-rose-700 focus:border-rose-500"
+                }`}
+              />
+              {badTime && !row.statusTime && (
+                <span className="text-[9px] font-bold text-rose-600" title="The browser only submits a complete time — finish every part, including AM/PM.">
+                  ⚠ incomplete — add AM/PM
+                </span>
+              )}
+            </>
           )}
           {/* Depot for the day — hidden until hover while at home, loud
               violet (matching the "from …" tag) while lent out. */}
