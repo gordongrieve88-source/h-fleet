@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { availFor, awayPlant, hostBlockFor, isOnRoad, statusKind, statusLabel, TRUCK_STATUS_CODES } from "./fleet";
+import { availFor, awayPlant, hostBlockFor, isOnRoad, parseTimeEntry, statusKind, statusLabel, TRUCK_STATUS_CODES } from "./fleet";
 
 describe("statusKind", () => {
   it("classifies the spreadsheet codes", () => {
@@ -105,5 +105,37 @@ describe("hostBlockFor — which block hosts a lent-out truck", () => {
 
   it("matches the plant case-insensitively", () => {
     expect(hostBlockFor("Greenacre Metro", "camellia", BLOCKS)).toBe("Camellia Metro");
+  });
+});
+
+describe("parseTimeEntry — the dispatcher's typed 24-hour time", () => {
+  it("takes the common shapes", () => {
+    expect(parseTimeEntry("1430")).toBe("14:30");
+    expect(parseTimeEntry("14:30")).toBe("14:30");
+    expect(parseTimeEntry("930")).toBe("09:30");
+    expect(parseTimeEntry("9:30")).toBe("09:30");
+    expect(parseTimeEntry("9.30")).toBe("09:30");
+    expect(parseTimeEntry(" 05:00 ")).toBe("05:00");
+  });
+
+  it("a bare hour means on the hour", () => {
+    expect(parseTimeEntry("14")).toBe("14:00");
+    expect(parseTimeEntry("9")).toBe("09:00");
+    expect(parseTimeEntry("0")).toBe("00:00");
+  });
+
+  it("honours a stubborn am/pm habit", () => {
+    expect(parseTimeEntry("2:30pm")).toBe("14:30");
+    expect(parseTimeEntry("930am")).toBe("09:30");
+    expect(parseTimeEntry("12am")).toBe("00:00");
+    expect(parseTimeEntry("12pm")).toBe("12:00");
+  });
+
+  it("rejects what isn't a time", () => {
+    expect(parseTimeEntry("2460")).toBeNull();
+    expect(parseTimeEntry("14:70")).toBeNull();
+    expect(parseTimeEntry("95")).toBeNull();
+    expect(parseTimeEntry("abc")).toBeNull();
+    expect(parseTimeEntry("")).toBeNull();
   });
 });

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TruckAssignmentVM, DriverVM } from "@/lib/fleet/catalog";
-import { TRUCK_STATUS, TIMED_STATUS, statusKind, isOnRoad } from "@/lib/wfm/fleet";
+import { TRUCK_STATUS, TIMED_STATUS, statusKind, isOnRoad, parseTimeEntry } from "@/lib/wfm/fleet";
 import { startVarianceMinutes } from "@/lib/wfm/analytics";
 import { DriverChip } from "./DriverChip";
 
@@ -99,8 +99,42 @@ export function TruckRow({
   acks: { summary: string; by: string; at: string }[];
 }) {
   const [over, setOver] = useState(false);
-  // The time field's segments are half-filled (no value to save yet).
+  // The planned-time field: local draft while typing, red hint when the text
+  // doesn't parse. The draft clears once the server echoes the saved value.
+  const [timeDraft, setTimeDraft] = useState<string | null>(null);
   const [badTime, setBadTime] = useState(false);
+  const timeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commitTime = (raw: string) => {
+    if (timeTimer.current) clearTimeout(timeTimer.current);
+    const parsed = raw.trim() === "" ? "" : parseTimeEntry(raw);
+    if (parsed === null) {
+      setBadTime(true);
+      return;
+    }
+    setBadTime(false);
+    setTimeDraft(parsed || null);
+    if (parsed !== (row.statusTime ?? "")) onStatusTime(parsed);
+  };
+  // Switching windows must never lose a typed time — flush the draft the
+  // moment the tab goes hidden (background timers can be frozen).
+  const flushRef = useRef<() => void>(() => {});
+  flushRef.current = () => {
+    if (timeDraft != null && timeDraft !== (row.statusTime ?? "")) commitTime(timeDraft);
+  };
+  useEffect(() => {
+    const onHide = () => {
+      if (document.hidden) flushRef.current();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, []);
+  // A fresh server value (or a status flip) supersedes the local draft.
+  const [timeSync, setTimeSync] = useState(`${row.status}|${row.statusTime ?? ""}`);
+  if (timeSync !== `${row.status}|${row.statusTime ?? ""}`) {
+    setTimeSync(`${row.status}|${row.statusTime ?? ""}`);
+    setTimeDraft(null);
+    setBadTime(false);
+  }
   const kind = statusKind(row.status);
   const needsCover = !driver && row.status.toUpperCase() === "OFF-ND";
   const timedLabel = TIMED_STATUS[row.status.toUpperCase()] ?? null;
@@ -248,35 +282,36 @@ export function TruckRow({
           {timedLabel && (
             <>
               <input
-                type="time"
-                defaultValue={row.statusTime ?? ""}
-                title={
-                  row.statusTime
-                    ? timedLabel
-                    : `${timedLabel} — nothing saved yet (red until the time lands). In 12-hour mode the AM/PM must be filled in too.`
-                }
-                // Save the instant the field holds a complete time — a delayed
-                // timer can freeze with a backgrounded tab and silently lose
-                // the entry. A half-filled field (typically a morning time
-                // missing its AM) has NO value at all, so it gets called out.
+                type="text"
+                inputMode="numeric"
+                maxLength={8}
+                placeholder="e.g. 1430"
+                value={timeDraft ?? row.statusTime ?? ""}
+                title={`${timedLabel} — 24-hour, type 1430 or 14:30${row.statusTime ? "" : ". Red until the time is saved."}`}
+                // Plain 24-hour text — no AM/PM segment to forget (a native
+                // time field in 12-hour locales silently holds NO value until
+                // AM/PM is picked, which lost morning late starts). Saves on
+                // a short pause, Enter, blur, or the tab being switched away.
                 onChange={(e) => {
-                  setBadTime(e.target.validity.badInput);
                   const v = e.target.value;
-                  if (v && v !== (row.statusTime ?? "")) onStatusTime(v);
+                  setTimeDraft(v);
+                  setBadTime(false);
+                  if (timeTimer.current) clearTimeout(timeTimer.current);
+                  timeTimer.current = setTimeout(() => commitTime(v), 900);
                 }}
-                onBlur={(e) => {
-                  setBadTime(e.target.validity.badInput);
-                  if (e.target.value !== (row.statusTime ?? "")) onStatusTime(e.target.value);
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitTime(e.currentTarget.value);
                 }}
+                onBlur={(e) => commitTime(e.target.value)}
                 className={`w-[92px] rounded-md border px-1 py-0.5 text-[10.5px] font-semibold tabular-nums focus:outline-none ${
                   row.statusTime
                     ? "border-amber-300 bg-amber-50 text-amber-800 focus:border-brand-mid"
                     : "border-rose-400 bg-rose-50 text-rose-700 focus:border-rose-500"
                 }`}
               />
-              {badTime && !row.statusTime && (
-                <span className="text-[9px] font-bold text-rose-600" title="The browser only submits a complete time — finish every part, including AM/PM.">
-                  ⚠ incomplete — add AM/PM
+              {badTime && (
+                <span className="text-[9px] font-bold text-rose-600" title="Type a 24-hour time like 1430 or 14:30.">
+                  ⚠ can&apos;t read that time
                 </span>
               )}
             </>

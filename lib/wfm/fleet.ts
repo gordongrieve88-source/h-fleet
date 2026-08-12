@@ -32,6 +32,23 @@ export const TIMED_STATUS: Record<string, string> = {
   "ON-DED": "start / finish time",
 };
 
+/**
+ * A dispatcher's typed time — 24-hour, forgiving about the separator:
+ * "1430", "14:30", "930", "9.30", bare "14" (= 14:00); a trailing am/pm is
+ * honoured if someone's habit insists. Null when it isn't a time.
+ */
+export function parseTimeEntry(text: string): string | null {
+  const m = /^(\d{1,2})[:.\s]?(\d{2})?\s*(am|pm|a|p)?$/.exec(text.trim().toLowerCase());
+  if (!m) return null;
+  let hour = Number(m[1]);
+  const minute = m[2] ? Number(m[2]) : 0;
+  const suffix = m[3]?.[0];
+  if (suffix === "p" && hour < 12) hour += 12;
+  if (suffix === "a" && hour === 12) hour = 0;
+  if (hour > 23 || minute > 59) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
 export function statusKind(code: string): "on" | "warn" | "off" {
   const s = (TRUCK_STATUS as Record<string, { kind: string }>)[code.trim().toUpperCase()];
   return (s?.kind as "on" | "warn" | "off") ?? "on";

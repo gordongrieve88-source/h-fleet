@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FleetCatalogVM, TruckAssignmentVM, DriverVM, LeaveTypeVM } from "@/lib/fleet/catalog";
-import { TRUCK_STATUS, availFor, awayPlant, ftoRotate, hostBlockFor, truckOrder } from "@/lib/wfm/fleet";
+import { TRUCK_STATUS, availFor, awayPlant, ftoRotate, hostBlockFor, parseTimeEntry, truckOrder } from "@/lib/wfm/fleet";
 import { addDaysKey, dateFromKey, isWeekendKey, mondayOf, todayKey, ymd } from "@/lib/wfm/date";
 import { Kpi } from "./Kpi";
 import { TruckRow } from "./TruckRow";
@@ -534,17 +534,23 @@ export function FleetBoard({
             </select>
             {bulkStatus in TIMED_STATUS && (
               <input
-                type="time"
+                type="text"
+                inputMode="numeric"
+                maxLength={8}
+                placeholder="e.g. 1430"
                 value={bulkTime}
                 onChange={(e) => setBulkTime(e.target.value)}
-                title={TIMED_STATUS[bulkStatus]}
-                className="rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs font-semibold tabular-nums text-amber-800"
+                title={`${TIMED_STATUS[bulkStatus]} — 24-hour, type 1430 or 14:30`}
+                className="w-20 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs font-semibold tabular-nums text-amber-800"
               />
             )}
             <button
               onClick={() =>
                 go(async () => {
-                  const res = await setTruckStatusBulk(date, [...selected], bulkStatus, bulkTime);
+                  // 24-hour text — normalise before it ships ("1430" → "14:30").
+                  const clean = bulkTime.trim() && bulkStatus in TIMED_STATUS ? parseTimeEntry(bulkTime) : "";
+                  if (clean === null) return { ok: false, error: "Can't read that time — type 24-hour, like 1430 or 14:30." };
+                  const res = await setTruckStatusBulk(date, [...selected], bulkStatus, clean);
                   if (res.ok) setSelected(new Set());
                   return res;
                 })
