@@ -57,6 +57,10 @@ for link in $(find "$STAGE/.next/node_modules" -type l); do
 done
 test -z "$(find "$STAGE" -type l)" || { echo "symlinks remain in bundle"; exit 1; }
 
+# Boot shim: first boot copies the seeded db to /home/data (persistent);
+# later deploys leave the live data alone.
+cp "$ROOT/deploy/azure-boot.js" "$STAGE/boot.js"
+
 ZIP="$(dirname "$STAGE")/h-fleet-demo.zip"
 (cd "$STAGE" && zip -qr "$ZIP" .)
 az webapp deploy -g "$RG" -n "$APP" --src-path "$ZIP" --type zip --timeout 600000
