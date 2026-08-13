@@ -7,8 +7,15 @@ const nextConfig: NextConfig = {
   // node_modules copy. Local `next dev`/`next start` are unaffected.
   output: "standalone",
   experimental: {
-    // The daily Syncrotess allocation PDF is uploaded through a server action.
-    serverActions: { bodySizeLimit: "10mb" },
+    serverActions: {
+      // The daily Syncrotess allocation PDF is uploaded through a server action.
+      bodySizeLimit: "10mb",
+      // Server actions check the request origin against the host; behind
+      // GitHub Codespaces port forwarding the app sees localhost while the
+      // browser comes from *.app.github.dev — trust that domain so demos
+      // hosted in a Codespace can submit actions.
+      allowedOrigins: ["*.app.github.dev"],
+    },
   },
   async headers() {
     return [
